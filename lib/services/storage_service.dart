@@ -113,4 +113,14 @@ class StorageService {
   String get aiProvider => _prefs.getString('aiProvider') ?? 'gemini';
   Future<void> setAiProvider(String provider) =>
       _prefs.setString('aiProvider', provider);
+
+  String get aiGeminiModel =>
+      _prefs.getString('aiGeminiModel') ?? 'gemini-2.5-flash';
+  Future<void> setAiGeminiModel(String model) =>
+      _prefs.setString('aiGeminiModel', model);
+
+  String get aiOpenAiModel =>
+      _prefs.getString('aiOpenAiModel') ?? 'gpt-4o-mini';
+  Future<void> setAiOpenAiModel(String model) =>
+      _prefs.setString('aiOpenAiModel', model);
 }

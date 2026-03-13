@@ -5,10 +5,12 @@ class FilterChipsWidget extends StatelessWidget {
   final bool showCoffee;
   final bool showMedicine;
   final bool showAlcohol;
+  final bool showNotes;
   final ValueChanged<bool> onSleepChanged;
   final ValueChanged<bool> onCoffeeChanged;
   final ValueChanged<bool> onMedicineChanged;
   final ValueChanged<bool> onAlcoholChanged;
+  final ValueChanged<bool> onNotesChanged;
 
   const FilterChipsWidget({
     super.key,
@@ -16,10 +18,12 @@ class FilterChipsWidget extends StatelessWidget {
     required this.showCoffee,
     required this.showMedicine,
     required this.showAlcohol,
+    required this.showNotes,
     required this.onSleepChanged,
     required this.onCoffeeChanged,
     required this.onMedicineChanged,
     required this.onAlcoholChanged,
+    required this.onNotesChanged,
   });
 
   @override
@@ -89,6 +93,21 @@ class FilterChipsWidget extends StatelessWidget {
             selectedColor: isDark ? Colors.red[700] : Colors.red[100],
             checkmarkColor: isDark ? Colors.white : null,
             onSelected: onAlcoholChanged,
+          ),
+          FilterChip(
+            label: Text(
+              'Notes',
+              style: TextStyle(color: isDark ? Colors.white : null),
+            ),
+            avatar: Icon(
+              Icons.note,
+              size: 18,
+              color: isDark ? Colors.amber[200] : null,
+            ),
+            selected: showNotes,
+            selectedColor: isDark ? Colors.amber[700] : Colors.amber[100],
+            checkmarkColor: isDark ? Colors.white : null,
+            onSelected: onNotesChanged,
           ),
         ],
       ),

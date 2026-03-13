@@ -44,6 +44,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
   bool _showCoffee = true;
   bool _showMedicine = true;
   bool _showAlcohol = true;
+  bool _showNotes = true;
 
   DateTime _selectedDay = DateTime.now();
   int _currentViewIndex = 0;
@@ -562,7 +563,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sleep Diary'),
+        title: const Text('PahingApp'),
         centerTitle: true,
         actions: [
           PopupMenuButton<String>(
@@ -666,7 +667,8 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
               });
             },
             eventLoader: (day) {
-              final List<SleepRecord> result = [];
+              final d = DateTime(day.year, day.month, day.day);
+              // Sleep records
               for (final records in _sleepData.values) {
                 for (final record in records) {
                   final start = DateTime(
@@ -679,13 +681,61 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                     record.wakeDate.month,
                     record.wakeDate.day,
                   );
-                  final d = DateTime(day.year, day.month, day.day);
-                  if (!d.isBefore(start) && !d.isAfter(end)) {
-                    result.add(record);
-                  }
+                  if (!d.isBefore(start) && !d.isAfter(end)) return [1];
                 }
               }
-              return result;
+              // Coffee records
+              for (final r in _coffeeRecords) {
+                final start = DateTime(
+                  r.startDate.year,
+                  r.startDate.month,
+                  r.startDate.day,
+                );
+                final end = DateTime(
+                  r.endDate.year,
+                  r.endDate.month,
+                  r.endDate.day,
+                );
+                if (!d.isBefore(start) && !d.isAfter(end)) return [1];
+              }
+              // Medicine records
+              for (final r in _medicineRecords) {
+                final start = DateTime(
+                  r.startDate.year,
+                  r.startDate.month,
+                  r.startDate.day,
+                );
+                final end = DateTime(
+                  r.endDate.year,
+                  r.endDate.month,
+                  r.endDate.day,
+                );
+                if (!d.isBefore(start) && !d.isAfter(end)) return [1];
+              }
+              // Alcohol records
+              for (final r in _alcoholRecords) {
+                final start = DateTime(
+                  r.startDate.year,
+                  r.startDate.month,
+                  r.startDate.day,
+                );
+                final end = DateTime(
+                  r.endDate.year,
+                  r.endDate.month,
+                  r.endDate.day,
+                );
+                if (!d.isBefore(start) && !d.isAfter(end)) return [1];
+              }
+              // Note records
+              for (final r in _noteRecords) {
+                final noteDate = DateTime(
+                  r.date.year,
+                  r.date.month,
+                  r.date.day,
+                );
+                if (noteDate == d) return [1];
+              }
+              return [];
             },
             availableGestures: AvailableGestures.horizontalSwipe,
             calendarStyle: const CalendarStyle(
@@ -705,10 +755,12 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
             showCoffee: _showCoffee,
             showMedicine: _showMedicine,
             showAlcohol: _showAlcohol,
+            showNotes: _showNotes,
             onSleepChanged: (val) => setState(() => _showSleep = val),
             onCoffeeChanged: (val) => setState(() => _showCoffee = val),
             onMedicineChanged: (val) => setState(() => _showMedicine = val),
             onAlcoholChanged: (val) => setState(() => _showAlcohol = val),
+            onNotesChanged: (val) => setState(() => _showNotes = val),
           ),
           const SizedBox(height: 4),
           _buildSleepRecordsList(),
@@ -1050,45 +1102,50 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
     }
 
     // Notes
-    for (final note in _noteRecords) {
-      final noteDate = DateTime(note.date.year, note.date.month, note.date.day);
-      if (noteDate == d) {
-        recordTiles.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Card(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.amber[900]
-                  : Colors.amber[50],
-              child: ListTile(
-                leading: const Icon(Icons.note, color: Colors.amber),
-                title: Text(note.text),
-                subtitle: Text('Note — ${formatDate(note.date)}'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit),
-                      onPressed: () => _showEditNoteDialog(context, note),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete),
-                      onPressed: () {
-                        setState(() => _noteRecords.remove(note));
-                        _storage.saveNoteRecords(_noteRecords);
-                      },
-                    ),
-                  ],
+    if (_showNotes)
+      for (final note in _noteRecords) {
+        final noteDate = DateTime(
+          note.date.year,
+          note.date.month,
+          note.date.day,
+        );
+        if (noteDate == d) {
+          recordTiles.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
+              child: Card(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.amber[900]
+                    : Colors.amber[50],
+                child: ListTile(
+                  leading: const Icon(Icons.note, color: Colors.amber),
+                  title: Text(note.text),
+                  subtitle: Text('Note — ${formatDate(note.date)}'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => _showEditNoteDialog(context, note),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () {
+                          setState(() => _noteRecords.remove(note));
+                          _storage.saveNoteRecords(_noteRecords);
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        );
+          );
+        }
       }
-    }
 
     if (recordTiles.isEmpty) {
       return const Center(child: Text('No records for this day'));

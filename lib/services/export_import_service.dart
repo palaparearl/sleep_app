@@ -82,7 +82,7 @@ class ExportImportService {
     } else {
       final bytes = utf8.encode(jsonString);
       final result = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save Sleep Diary Export',
+        dialogTitle: 'Save PahingApp Export',
         fileName: fileName,
         type: FileType.custom,
         allowedExtensions: ['json'],

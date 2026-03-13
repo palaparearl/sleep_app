@@ -5,6 +5,9 @@ enum AiProvider { openai, gemini }
 
 class AiChatService {
   static const _openaiUrl = 'https://api.openai.com/v1/chat/completions';
+  static const _openaiModelsUrl = 'https://api.openai.com/v1/models';
+  static const _geminiModelsUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models';
 
   static String _geminiUrl(String apiKey, String model) =>
       'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey';
@@ -21,12 +24,13 @@ class AiChatService {
     required AiProvider provider,
     required String statsSummary,
     required String userMessage,
+    String? model,
   }) async {
     switch (provider) {
       case AiProvider.openai:
-        return _askOpenAi(apiKey, statsSummary, userMessage);
+        return _askOpenAi(apiKey, statsSummary, userMessage, model);
       case AiProvider.gemini:
-        return _askGemini(apiKey, statsSummary, userMessage);
+        return _askGemini(apiKey, statsSummary, userMessage, model);
     }
   }
 
@@ -34,7 +38,11 @@ class AiChatService {
     String apiKey,
     String statsSummary,
     String userMessage,
+    String? model,
   ) async {
+    final selectedModel = model?.trim().isNotEmpty == true
+        ? model!.trim()
+        : 'gpt-4o-mini';
     final response = await http.post(
       Uri.parse(_openaiUrl),
       headers: {
@@ -42,7 +50,7 @@ class AiChatService {
         'Authorization': 'Bearer $apiKey',
       },
       body: jsonEncode({
-        'model': 'gpt-4o-mini',
+        'model': selectedModel,
         'messages': [
           {'role': 'system', 'content': _systemPrompt},
           {
@@ -76,23 +84,78 @@ class AiChatService {
     }
   }
 
-  static String? _cachedModel;
+  static final Map<String, String?> _cachedGeminiModels = {};
+
+  static Future<List<String>> listOpenAiModels(String apiKey) async {
+    final response = await http.get(
+      Uri.parse(_openaiModelsUrl),
+      headers: {'Authorization': 'Bearer $apiKey'},
+    );
+    if (response.statusCode != 200) {
+      return [];
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final models = data['data'] as List? ?? [];
+    final availableModels = <String>[];
+
+    for (final model in models) {
+      final id = (model['id'] as String?) ?? '';
+      final isChatModel =
+          id.startsWith('gpt-') ||
+          id.startsWith('o1') ||
+          id.startsWith('o3') ||
+          id.startsWith('o4');
+      final isExcluded =
+          id.contains('audio') ||
+          id.contains('realtime') ||
+          id.contains('search') ||
+          id.contains('transcribe') ||
+          id.contains('tts') ||
+          id.contains('image') ||
+          id.contains('embed');
+
+      if (isChatModel && !isExcluded) {
+        availableModels.add(id);
+      }
+    }
+
+    const preferredOrder = [
+      'gpt-4o-mini',
+      'gpt-4.1-mini',
+      'gpt-4.1',
+      'gpt-4o',
+      'o4-mini',
+      'o3-mini',
+      'o1-mini',
+    ];
+
+    availableModels.sort((a, b) {
+      final ai = preferredOrder.indexOf(a);
+      final bi = preferredOrder.indexOf(b);
+      if (ai != -1 && bi != -1) return ai.compareTo(bi);
+      if (ai != -1) return -1;
+      if (bi != -1) return 1;
+      return a.compareTo(b);
+    });
+
+    return availableModels;
+  }
 
   static Future<String> _askGemini(
     String apiKey,
     String statsSummary,
     String userMessage,
+    String? model,
   ) async {
-    // Cache the model so we don't call ListModels every time
-    _cachedModel ??= await _findGeminiModel(apiKey);
-    final model = _cachedModel;
-    if (model == null) {
+    final selectedModel = await _resolveGeminiModel(apiKey, model);
+    if (selectedModel == null) {
       return 'No Gemini models available for your API key. '
           'Please check your key or try creating a new one at aistudio.google.com.';
     }
 
     final response = await http.post(
-      Uri.parse(_geminiUrl(apiKey, model)),
+      Uri.parse(_geminiUrl(apiKey, selectedModel)),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'contents': [
@@ -135,46 +198,65 @@ class AiChatService {
     }
   }
 
-  /// Calls ListModels to find a model that supports generateContent.
-  static Future<String?> _findGeminiModel(String apiKey) async {
-    final url =
-        'https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey';
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode != 200) return null;
+  static Future<String?> _resolveGeminiModel(
+    String apiKey,
+    String? requestedModel,
+  ) async {
+    if (requestedModel != null && requestedModel.trim().isNotEmpty) {
+      return requestedModel.trim();
+    }
+    if (_cachedGeminiModels.containsKey(apiKey)) {
+      return _cachedGeminiModels[apiKey];
+    }
+    final discoveredModel = await _findGeminiModel(apiKey);
+    _cachedGeminiModels[apiKey] = discoveredModel;
+    return discoveredModel;
+  }
+
+  static Future<List<String>> listGeminiModels(String apiKey) async {
+    final response = await http.get(Uri.parse('$_geminiModelsUrl?key=$apiKey'));
+    if (response.statusCode != 200) {
+      return [];
+    }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final models = data['models'] as List? ?? [];
+    final availableModels = <String>[];
 
-    // Prefer newer flash models first
-    final preferred = [
+    for (final model in models) {
+      final id = (model['name'] as String?) ?? '';
+      final methods =
+          (model['supportedGenerationMethods'] as List?)?.cast<String>() ?? [];
+      if (methods.contains('generateContent') && id.startsWith('models/')) {
+        availableModels.add(id.replaceFirst('models/', ''));
+      }
+    }
+
+    const preferredOrder = [
       'gemini-2.5-flash',
+      'gemini-2.5-pro',
       'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro',
+      'gemini-2.0-flash-lite',
+      'gemini-flash-latest',
+      'gemini-pro-latest',
     ];
 
-    for (final name in preferred) {
-      for (final m in models) {
-        final id = (m['name'] as String?) ?? '';
-        final methods =
-            (m['supportedGenerationMethods'] as List?)?.cast<String>() ?? [];
-        if (id.contains(name) && methods.contains('generateContent')) {
-          // id is like "models/gemini-2.0-flash", strip the prefix
-          return id.replaceFirst('models/', '');
-        }
-      }
-    }
+    availableModels.sort((a, b) {
+      final ai = preferredOrder.indexOf(a);
+      final bi = preferredOrder.indexOf(b);
+      if (ai != -1 && bi != -1) return ai.compareTo(bi);
+      if (ai != -1) return -1;
+      if (bi != -1) return 1;
+      return a.compareTo(b);
+    });
 
-    // Fallback: pick any model that supports generateContent
-    for (final m in models) {
-      final id = (m['name'] as String?) ?? '';
-      final methods =
-          (m['supportedGenerationMethods'] as List?)?.cast<String>() ?? [];
-      if (methods.contains('generateContent')) {
-        return id.replaceFirst('models/', '');
-      }
-    }
+    return availableModels;
+  }
 
-    return null;
+  /// Calls ListModels to find a model that supports generateContent.
+  static Future<String?> _findGeminiModel(String apiKey) async {
+    final models = await listGeminiModels(apiKey);
+    if (models.isEmpty) return null;
+    return models.first;
   }
 }

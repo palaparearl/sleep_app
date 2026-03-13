@@ -47,7 +47,7 @@ Future<void> showAddSleepDialog({
                       final time = await showTimePicker(
                         context: context,
                         initialTime:
-                            sleepTime ?? const TimeOfDay(hour: 22, minute: 0),
+                            sleepTime ?? const TimeOfDay(hour: 6, minute: 0),
                       );
                       if (time != null) setState(() => sleepTime = time);
                     },
@@ -76,7 +76,7 @@ Future<void> showAddSleepDialog({
                       final time = await showTimePicker(
                         context: context,
                         initialTime:
-                            wakeTime ?? const TimeOfDay(hour: 7, minute: 0),
+                            wakeTime ?? const TimeOfDay(hour: 14, minute: 0),
                       );
                       if (time != null) setState(() => wakeTime = time);
                     },
@@ -303,7 +303,7 @@ Future<void> showAddActivityDialog({
                       final time = await showTimePicker(
                         context: context,
                         initialTime:
-                            startTime ?? const TimeOfDay(hour: 8, minute: 0),
+                            startTime ?? const TimeOfDay(hour: 6, minute: 0),
                       );
                       if (time != null) setState(() => startTime = time);
                     },
@@ -332,7 +332,7 @@ Future<void> showAddActivityDialog({
                       final time = await showTimePicker(
                         context: context,
                         initialTime:
-                            endTime ?? const TimeOfDay(hour: 10, minute: 0),
+                            endTime ?? const TimeOfDay(hour: 14, minute: 0),
                       );
                       if (time != null) setState(() => endTime = time);
                     },
