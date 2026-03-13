@@ -6,6 +6,7 @@ import '../services/services.dart';
 import '../utils/helpers.dart';
 import '../widgets/widgets.dart';
 import '../app.dart';
+import 'dashboard_screen.dart';
 
 typedef ActivityRecord = ({
   String letter,
@@ -37,6 +38,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
   List<CoffeeRecord> _coffeeRecords = [];
   List<MedicineRecord> _medicineRecords = [];
   List<AlcoholRecord> _alcoholRecords = [];
+  List<NoteRecord> _noteRecords = [];
 
   bool _showSleep = true;
   bool _showCoffee = true;
@@ -73,6 +75,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       _coffeeRecords = _storage.loadCoffeeRecords();
       _medicineRecords = _storage.loadMedicineRecords();
       _alcoholRecords = _storage.loadAlcoholRecords();
+      _noteRecords = _storage.loadNoteRecords();
     });
   }
 
@@ -134,6 +137,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       coffeeRecords: _coffeeRecords,
       medicineRecords: _medicineRecords,
       alcoholRecords: _alcoholRecords,
+      noteRecords: _noteRecords,
     );
   }
 
@@ -189,12 +193,20 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
         );
         if (!isDuplicate) _alcoholRecords.add(imp);
       }
+
+      for (final imp in imported.noteRecords) {
+        final isDuplicate = _noteRecords.any(
+          (e) => e.date == imp.date && e.text == imp.text,
+        );
+        if (!isDuplicate) _noteRecords.add(imp);
+      }
     });
 
     await _storage.saveSleepData(_sleepData);
     await _storage.saveCoffeeRecords(_coffeeRecords);
     await _storage.saveMedicineRecords(_medicineRecords);
     await _storage.saveAlcoholRecords(_alcoholRecords);
+    await _storage.saveNoteRecords(_noteRecords);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -229,9 +241,14 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                   title: 'Coffee/Cola/Tea',
                   selectedDay: _selectedDay,
                   onSave: (s, st, e, et) {
-                    _coffeeRecords.add(CoffeeRecord(
-                      startDate: s, startTime: st, endDate: e, endTime: et,
-                    ));
+                    _coffeeRecords.add(
+                      CoffeeRecord(
+                        startDate: s,
+                        startTime: st,
+                        endDate: e,
+                        endTime: et,
+                      ),
+                    );
                     _storage.saveCoffeeRecords(_coffeeRecords);
                     setState(() {});
                   },
@@ -247,9 +264,14 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                   title: 'Medicine',
                   selectedDay: _selectedDay,
                   onSave: (s, st, e, et) {
-                    _medicineRecords.add(MedicineRecord(
-                      startDate: s, startTime: st, endDate: e, endTime: et,
-                    ));
+                    _medicineRecords.add(
+                      MedicineRecord(
+                        startDate: s,
+                        startTime: st,
+                        endDate: e,
+                        endTime: et,
+                      ),
+                    );
                     _storage.saveMedicineRecords(_medicineRecords);
                     setState(() {});
                   },
@@ -265,15 +287,147 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                   title: 'Alcohol',
                   selectedDay: _selectedDay,
                   onSave: (s, st, e, et) {
-                    _alcoholRecords.add(AlcoholRecord(
-                      startDate: s, startTime: st, endDate: e, endTime: et,
-                    ));
+                    _alcoholRecords.add(
+                      AlcoholRecord(
+                        startDate: s,
+                        startTime: st,
+                        endDate: e,
+                        endTime: et,
+                      ),
+                    );
                     _storage.saveAlcoholRecords(_alcoholRecords);
                     setState(() {});
                   },
                 );
               },
               child: const Text('Alcohol'),
+            ),
+            SimpleDialogOption(
+              onPressed: () {
+                Navigator.pop(context);
+                _showAddNoteDialog(context);
+              },
+              child: const Text('Note'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showAddNoteDialog(BuildContext context) {
+    final textController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Add Note'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Date: ${formatDate(_selectedDay)}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                decoration: const InputDecoration(
+                  labelText: 'Note',
+                  hintText: 'Enter your note...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 4,
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final text = textController.text.trim();
+                if (text.isEmpty) return;
+                setState(() {
+                  _noteRecords.add(
+                    NoteRecord(
+                      date: DateTime(
+                        _selectedDay.year,
+                        _selectedDay.month,
+                        _selectedDay.day,
+                      ),
+                      text: text,
+                    ),
+                  );
+                });
+                _storage.saveNoteRecords(_noteRecords);
+                Navigator.pop(context);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showEditNoteDialog(BuildContext context, NoteRecord note) {
+    final textController = TextEditingController(text: note.text);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit Note'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Date: ${formatDate(note.date)}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                decoration: const InputDecoration(
+                  labelText: 'Note',
+                  hintText: 'Enter your note...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 4,
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final text = textController.text.trim();
+                if (text.isEmpty) return;
+                final idx = _noteRecords.indexOf(note);
+                if (idx != -1) {
+                  setState(() {
+                    _noteRecords[idx] = note.copyWith(text: text);
+                  });
+                  _storage.saveNoteRecords(_noteRecords);
+                }
+                Navigator.pop(context);
+              },
+              child: const Text('Save'),
             ),
           ],
         );
@@ -356,18 +510,43 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
         startTimeStr: fmtTime(startTime),
         endDateStr: formatDate(endDate),
         endTimeStr: fmtTime(endTime),
-        key: '${letter}_${formatDate(startDate)}_${fmtTime(startTime)}_${formatDate(endDate)}_${fmtTime(endTime)}',
+        key:
+            '${letter}_${formatDate(startDate)}_${fmtTime(startTime)}_${formatDate(endDate)}_${fmtTime(endTime)}',
       ));
     }
 
     for (final r in _coffeeRecords) {
-      collect('C', Colors.brown, 'Coffee/Cola/Tea', r.startDate, r.startTime, r.endDate, r.endTime);
+      collect(
+        'C',
+        Colors.brown,
+        'Coffee/Cola/Tea',
+        r.startDate,
+        r.startTime,
+        r.endDate,
+        r.endTime,
+      );
     }
     for (final r in _alcoholRecords) {
-      collect('A', Colors.red, 'Alcohol', r.startDate, r.startTime, r.endDate, r.endTime);
+      collect(
+        'A',
+        Colors.red,
+        'Alcohol',
+        r.startDate,
+        r.startTime,
+        r.endDate,
+        r.endTime,
+      );
     }
     for (final r in _medicineRecords) {
-      collect('M', Colors.green, 'Medicine', r.startDate, r.startTime, r.endDate, r.endTime);
+      collect(
+        'M',
+        Colors.green,
+        'Medicine',
+        r.startDate,
+        r.startTime,
+        r.endDate,
+        r.endTime,
+      );
     }
 
     return records;
@@ -431,7 +610,15 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       ),
       body: _currentViewIndex == 0
           ? _buildCalendarView()
-          : _buildTimelineView(),
+          : _currentViewIndex == 1
+          ? _buildTimelineView()
+          : DashboardScreen(
+              sleepData: _sleepData,
+              coffeeRecords: _coffeeRecords,
+              medicineRecords: _medicineRecords,
+              alcoholRecords: _alcoholRecords,
+              storage: _storage,
+            ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentViewIndex,
         onTap: (index) {
@@ -448,6 +635,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
             icon: Icon(Icons.timeline),
             label: 'Timeline',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -461,65 +652,68 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
   // ==================== CALENDAR VIEW ====================
 
   Widget _buildCalendarView() {
-    return Column(
-      children: [
-        TableCalendar(
-          firstDay: DateTime.utc(2020, 1, 1),
-          lastDay: DateTime.utc(2030, 12, 31),
-          focusedDay: _selectedDay,
-          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-          onDaySelected: (selectedDay, focusedDay) {
-            setState(() {
-              _selectedDay = selectedDay;
-            });
-          },
-          eventLoader: (day) {
-            final List<SleepRecord> result = [];
-            for (final records in _sleepData.values) {
-              for (final record in records) {
-                final start = DateTime(
-                  record.sleepDate.year,
-                  record.sleepDate.month,
-                  record.sleepDate.day,
-                );
-                final end = DateTime(
-                  record.wakeDate.year,
-                  record.wakeDate.month,
-                  record.wakeDate.day,
-                );
-                final d = DateTime(day.year, day.month, day.day);
-                if (!d.isBefore(start) && !d.isAfter(end)) {
-                  result.add(record);
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          TableCalendar(
+            firstDay: DateTime.utc(2020, 1, 1),
+            lastDay: DateTime.utc(2030, 12, 31),
+            focusedDay: _selectedDay,
+            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+            onDaySelected: (selectedDay, focusedDay) {
+              setState(() {
+                _selectedDay = selectedDay;
+              });
+            },
+            eventLoader: (day) {
+              final List<SleepRecord> result = [];
+              for (final records in _sleepData.values) {
+                for (final record in records) {
+                  final start = DateTime(
+                    record.sleepDate.year,
+                    record.sleepDate.month,
+                    record.sleepDate.day,
+                  );
+                  final end = DateTime(
+                    record.wakeDate.year,
+                    record.wakeDate.month,
+                    record.wakeDate.day,
+                  );
+                  final d = DateTime(day.year, day.month, day.day);
+                  if (!d.isBefore(start) && !d.isAfter(end)) {
+                    result.add(record);
+                  }
                 }
               }
-            }
-            return result;
-          },
-          calendarStyle: const CalendarStyle(
-            markerDecoration: BoxDecoration(
-              color: Colors.blue,
-              shape: BoxShape.circle,
-            ),
-            selectedDecoration: BoxDecoration(
-              color: Colors.blue,
-              shape: BoxShape.circle,
+              return result;
+            },
+            availableGestures: AvailableGestures.horizontalSwipe,
+            calendarStyle: const CalendarStyle(
+              markerDecoration: BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
+              selectedDecoration: BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        FilterChipsWidget(
-          showSleep: _showSleep,
-          showCoffee: _showCoffee,
-          showMedicine: _showMedicine,
-          showAlcohol: _showAlcohol,
-          onSleepChanged: (val) => setState(() => _showSleep = val),
-          onCoffeeChanged: (val) => setState(() => _showCoffee = val),
-          onMedicineChanged: (val) => setState(() => _showMedicine = val),
-          onAlcoholChanged: (val) => setState(() => _showAlcohol = val),
-        ),
-        const SizedBox(height: 4),
-        Expanded(child: _buildSleepRecordsList()),
-      ],
+          const SizedBox(height: 8),
+          FilterChipsWidget(
+            showSleep: _showSleep,
+            showCoffee: _showCoffee,
+            showMedicine: _showMedicine,
+            showAlcohol: _showAlcohol,
+            onSleepChanged: (val) => setState(() => _showSleep = val),
+            onCoffeeChanged: (val) => setState(() => _showCoffee = val),
+            onMedicineChanged: (val) => setState(() => _showMedicine = val),
+            onAlcoholChanged: (val) => setState(() => _showAlcohol = val),
+          ),
+          const SizedBox(height: 4),
+          _buildSleepRecordsList(),
+        ],
+      ),
     );
   }
 
@@ -553,7 +747,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
         final wakeDateStr = formatDate(record.wakeDate);
         recordTiles.add(
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: Card(
               color: Theme.of(context).brightness == Brightness.dark
                   ? Colors.indigo[900]
@@ -594,7 +791,8 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                               ),
                               actions: [
                                 TextButton(
-                                  onPressed: () => Navigator.pop(context, false),
+                                  onPressed: () =>
+                                      Navigator.pop(context, false),
                                   child: const Text('Cancel'),
                                 ),
                                 TextButton(
@@ -628,12 +826,23 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
 
     if (_showAlcohol) {
       for (final record in _alcoholRecords) {
-        final start = DateTime(record.startDate.year, record.startDate.month, record.startDate.day);
-        final end = DateTime(record.endDate.year, record.endDate.month, record.endDate.day);
+        final start = DateTime(
+          record.startDate.year,
+          record.startDate.month,
+          record.startDate.day,
+        );
+        final end = DateTime(
+          record.endDate.year,
+          record.endDate.month,
+          record.endDate.day,
+        );
         if (!d.isBefore(start) && !d.isAfter(end)) {
           recordTiles.add(
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
               child: Card(
                 color: Theme.of(context).brightness == Brightness.dark
                     ? Colors.red[900]
@@ -662,7 +871,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                             final idx = _alcoholRecords.indexOf(record);
                             if (idx != -1) {
                               _alcoholRecords[idx] = AlcoholRecord(
-                                startDate: s, startTime: st, endDate: e, endTime: et,
+                                startDate: s,
+                                startTime: st,
+                                endDate: e,
+                                endTime: et,
                               );
                               _storage.saveAlcoholRecords(_alcoholRecords);
                               setState(() {});
@@ -689,12 +901,23 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
 
     if (_showCoffee) {
       for (final record in _coffeeRecords) {
-        final start = DateTime(record.startDate.year, record.startDate.month, record.startDate.day);
-        final end = DateTime(record.endDate.year, record.endDate.month, record.endDate.day);
+        final start = DateTime(
+          record.startDate.year,
+          record.startDate.month,
+          record.startDate.day,
+        );
+        final end = DateTime(
+          record.endDate.year,
+          record.endDate.month,
+          record.endDate.day,
+        );
         if (!d.isBefore(start) && !d.isAfter(end)) {
           recordTiles.add(
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
               child: Card(
                 color: Theme.of(context).brightness == Brightness.dark
                     ? Colors.brown[900]
@@ -723,7 +946,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                             final idx = _coffeeRecords.indexOf(record);
                             if (idx != -1) {
                               _coffeeRecords[idx] = CoffeeRecord(
-                                startDate: s, startTime: st, endDate: e, endTime: et,
+                                startDate: s,
+                                startTime: st,
+                                endDate: e,
+                                endTime: et,
                               );
                               _storage.saveCoffeeRecords(_coffeeRecords);
                               setState(() {});
@@ -750,12 +976,23 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
 
     if (_showMedicine) {
       for (final record in _medicineRecords) {
-        final start = DateTime(record.startDate.year, record.startDate.month, record.startDate.day);
-        final end = DateTime(record.endDate.year, record.endDate.month, record.endDate.day);
+        final start = DateTime(
+          record.startDate.year,
+          record.startDate.month,
+          record.startDate.day,
+        );
+        final end = DateTime(
+          record.endDate.year,
+          record.endDate.month,
+          record.endDate.day,
+        );
         if (!d.isBefore(start) && !d.isAfter(end)) {
           recordTiles.add(
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 8.0,
+              ),
               child: Card(
                 color: Theme.of(context).brightness == Brightness.dark
                     ? Colors.green[900]
@@ -784,7 +1021,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                             final idx = _medicineRecords.indexOf(record);
                             if (idx != -1) {
                               _medicineRecords[idx] = MedicineRecord(
-                                startDate: s, startTime: st, endDate: e, endTime: et,
+                                startDate: s,
+                                startTime: st,
+                                endDate: e,
+                                endTime: et,
                               );
                               _storage.saveMedicineRecords(_medicineRecords);
                               setState(() {});
@@ -809,51 +1049,96 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       }
     }
 
+    // Notes
+    for (final note in _noteRecords) {
+      final noteDate = DateTime(note.date.year, note.date.month, note.date.day);
+      if (noteDate == d) {
+        recordTiles.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
+            child: Card(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.amber[900]
+                  : Colors.amber[50],
+              child: ListTile(
+                leading: const Icon(Icons.note, color: Colors.amber),
+                title: Text(note.text),
+                subtitle: Text('Note — ${formatDate(note.date)}'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      onPressed: () => _showEditNoteDialog(context, note),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete),
+                      onPressed: () {
+                        setState(() => _noteRecords.remove(note));
+                        _storage.saveNoteRecords(_noteRecords);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
     if (recordTiles.isEmpty) {
       return const Center(child: Text('No records for this day'));
     }
 
-    return ListView(children: recordTiles);
+    return ListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: recordTiles,
+    );
   }
 
   // ==================== TIMELINE VIEW ====================
 
   Widget _buildTimelineView() {
-    final Set<DateTime> allDatesSet = {};
-    for (final records in _sleepData.values) {
-      for (final record in records) {
-        DateTime d = DateTime(
-          record.sleepDate.year,
-          record.sleepDate.month,
-          record.sleepDate.day,
-        );
-        final end = DateTime(
-          record.wakeDate.year,
-          record.wakeDate.month,
-          record.wakeDate.day,
-        );
-        while (!d.isAfter(end)) {
-          allDatesSet.add(d);
-          d = d.add(const Duration(days: 1));
-        }
-      }
-    }
-    final allDates = allDatesSet.toList()..sort((a, b) => a.compareTo(b));
-
-    if (allDates.isEmpty) {
-      return const Center(child: Text('No sleep records yet'));
-    }
-
     const int itemsPerPage = 7;
-    final totalPages = (allDates.length / itemsPerPage).ceil();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
-    if (_timelinePageIndex >= totalPages) {
-      _timelinePageIndex = totalPages - 1;
+    // Page 0 shows the 7-day window ending on today.
+    // Negative pages go into the past, positive into the future.
+    final pageEndDate = today.add(
+      Duration(days: _timelinePageIndex * itemsPerPage),
+    );
+    final pageDates = List.generate(
+      itemsPerPage,
+      (i) => pageEndDate.subtract(Duration(days: itemsPerPage - 1 - i)),
+    );
+
+    // Format the date range for display
+    String _fmtShort(DateTime d) {
+      const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
+      return '${months[d.month - 1]} ${d.day}';
     }
 
-    final startIndex = _timelinePageIndex * itemsPerPage;
-    final endIndex = (startIndex + itemsPerPage).clamp(0, allDates.length);
-    final pageDates = allDates.sublist(startIndex, endIndex);
+    final rangeLabel =
+        '${_fmtShort(pageDates.first)} – ${_fmtShort(pageDates.last)}';
 
     return Column(
       children: [
@@ -864,19 +1149,18 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back),
-                onPressed: _timelinePageIndex > 0
-                    ? () => setState(() => _timelinePageIndex--)
-                    : null,
+                onPressed: () => setState(() => _timelinePageIndex--),
               ),
-              Text(
-                'Page ${_timelinePageIndex + 1} of $totalPages',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+              GestureDetector(
+                onTap: () => setState(() => _timelinePageIndex = 0),
+                child: Text(
+                  rangeLabel,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.arrow_forward),
-                onPressed: _timelinePageIndex < totalPages - 1
-                    ? () => setState(() => _timelinePageIndex++)
-                    : null,
+                onPressed: () => setState(() => _timelinePageIndex++),
               ),
             ],
           ),
@@ -893,10 +1177,12 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: pageDates
-                        .map((date) => _buildTimelineRow(
-                              date,
-                              _getSegmentsForDate(date),
-                            ))
+                        .map(
+                          (date) => _buildTimelineRow(
+                            date,
+                            _getSegmentsForDate(date),
+                          ),
+                        )
                         .toList(),
                   ),
                 ],
@@ -964,6 +1250,39 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
     );
   }
 
+  List<NoteRecord> _notesForDate(DateTime date) {
+    final d = DateTime(date.year, date.month, date.day);
+    return _noteRecords.where((n) {
+      final nd = DateTime(n.date.year, n.date.month, n.date.day);
+      return nd == d;
+    }).toList();
+  }
+
+  void _showNoteTooltip(BuildContext context, DateTime date) {
+    final notes = _notesForDate(date);
+    if (notes.isEmpty) return;
+    final text = notes.map((n) => n.text).join('\n---\n');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.note, color: Colors.amber, size: 20),
+            const SizedBox(width: 8),
+            Text('Notes — ${formatDate(date)}'),
+          ],
+        ),
+        content: Text(text),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTimelineRow(DateTime date, List<SleepBarSegment> segments) {
     final tracks = <int, int>{};
     final segs = _getSegmentsForDate(date);
@@ -972,7 +1291,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
         '${r.sleepDate.toIso8601String()}_${r.sleepTime.hour}:${r.sleepTime.minute}_${r.wakeDate.toIso8601String()}_${r.wakeTime.hour}:${r.wakeTime.minute}';
 
     String? selectedRecordKey = _selectedTimelineRecordKey;
-    final List<GlobalKey> barKeys = List.generate(segs.length, (_) => GlobalKey());
+    final List<GlobalKey> barKeys = List.generate(
+      segs.length,
+      (_) => GlobalKey(),
+    );
 
     for (int i = 0; i < segs.length; i++) {
       int assignedTrack = 0;
@@ -990,7 +1312,9 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       tracks[i] = assignedTrack;
     }
 
-    final maxTrack = tracks.isEmpty ? 0 : tracks.values.reduce((a, b) => a > b ? a : b);
+    final maxTrack = tracks.isEmpty
+        ? 0
+        : tracks.values.reduce((a, b) => a > b ? a : b);
     final maxMarkerTrack = _getMaxMarkerTrack(date);
     final hasMarkers = maxMarkerTrack >= 0;
     final markerHeight = hasMarkers ? (maxMarkerTrack + 1) * 22.0 : 0.0;
@@ -1013,9 +1337,27 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    date.toString().split(' ')[0],
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          date.toString().split(' ')[0],
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      if (_notesForDate(date).isNotEmpty)
+                        GestureDetector(
+                          onTap: () => _showNoteTooltip(context, date),
+                          child: const Icon(
+                            Icons.note,
+                            size: 16,
+                            color: Colors.amber,
+                          ),
+                        ),
+                    ],
                   ),
                   Text(getDayName(date), style: const TextStyle(fontSize: 9)),
                 ],
@@ -1067,7 +1409,8 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       final overlay = Overlay.of(context, rootOverlay: true);
                       final RenderBox? box =
-                          barKey.currentContext?.findRenderObject() as RenderBox?;
+                          barKey.currentContext?.findRenderObject()
+                              as RenderBox?;
                       OverlayEntry? overlayEntry;
                       if (box != null && box.attached) {
                         final pos = box.localToGlobal(Offset.zero);
@@ -1085,7 +1428,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                                 ),
                                 child: Text(
                                   tooltipText,
-                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1104,7 +1450,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                                 ),
                                 child: Text(
                                   tooltipText,
-                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1124,16 +1473,20 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                   return Positioned(
                     top: 8.0 + track * 25.0,
                     height: 20,
-                    left: (seg.start.hour * 60 + seg.start.minute) /
+                    left:
+                        (seg.start.hour * 60 + seg.start.minute) /
                         (24 * 60) *
                         (24 * 40),
-                    width: ((seg.end.hour * 60 + seg.end.minute) -
+                    width:
+                        ((seg.end.hour * 60 + seg.end.minute) -
                             (seg.start.hour * 60 + seg.start.minute)) /
                         (24 * 60) *
                         (24 * 40),
                     child: GestureDetector(
                       onLongPress: () {
-                        setState(() => _selectedTimelineRecordKey = thisRecordKey);
+                        setState(
+                          () => _selectedTimelineRecordKey = thisRecordKey,
+                        );
                         showTooltip();
                       },
                       onLongPressUp: () {
@@ -1148,7 +1501,8 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                         key: barKey,
                         duration: const Duration(milliseconds: 150),
                         decoration: BoxDecoration(
-                          color: (selectedRecordKey != null &&
+                          color:
+                              (selectedRecordKey != null &&
                                   selectedRecordKey == thisRecordKey)
                               ? Colors.orange
                               : Colors.blue,

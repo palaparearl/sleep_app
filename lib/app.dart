@@ -33,8 +33,9 @@ class _MyAppState extends State<MyApp> {
   Future<void> toggleTheme() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _themeMode =
-          _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+      _themeMode = _themeMode == ThemeMode.dark
+          ? ThemeMode.light
+          : ThemeMode.dark;
     });
     await prefs.setBool('nightMode', _themeMode == ThemeMode.dark);
   }

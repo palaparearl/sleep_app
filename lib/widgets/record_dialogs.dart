@@ -42,9 +42,7 @@ Future<void> showAddSleepDialog({
                   ),
                   ListTile(
                     title: const Text('Sleep Time'),
-                    subtitle: Text(
-                      sleepTime?.format(context) ?? 'Select time',
-                    ),
+                    subtitle: Text(sleepTime?.format(context) ?? 'Select time'),
                     onTap: () async {
                       final time = await showTimePicker(
                         context: context,
@@ -73,9 +71,7 @@ Future<void> showAddSleepDialog({
                   ),
                   ListTile(
                     title: const Text('Wake Time'),
-                    subtitle: Text(
-                      wakeTime?.format(context) ?? 'Select time',
-                    ),
+                    subtitle: Text(wakeTime?.format(context) ?? 'Select time'),
                     onTap: () async {
                       final time = await showTimePicker(
                         context: context,
@@ -302,9 +298,7 @@ Future<void> showAddActivityDialog({
                   ),
                   ListTile(
                     title: const Text('Start Time'),
-                    subtitle: Text(
-                      startTime?.format(context) ?? 'Select time',
-                    ),
+                    subtitle: Text(startTime?.format(context) ?? 'Select time'),
                     onTap: () async {
                       final time = await showTimePicker(
                         context: context,

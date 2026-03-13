@@ -88,4 +88,29 @@ class StorageService {
       jsonEncode(records.map((r) => r.toJson()).toList()),
     );
   }
+
+  // Note records
+  List<NoteRecord> loadNoteRecords() {
+    final data = _prefs.getString('noteRecords');
+    if (data == null) return [];
+    final list = jsonDecode(data) as List;
+    return list
+        .map((r) => NoteRecord.fromJson(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> saveNoteRecords(List<NoteRecord> records) async {
+    await _prefs.setString(
+      'noteRecords',
+      jsonEncode(records.map((r) => r.toJson()).toList()),
+    );
+  }
+
+  // AI settings
+  String get aiApiKey => _prefs.getString('aiApiKey') ?? '';
+  Future<void> setAiApiKey(String key) => _prefs.setString('aiApiKey', key);
+
+  String get aiProvider => _prefs.getString('aiProvider') ?? 'gemini';
+  Future<void> setAiProvider(String provider) =>
+      _prefs.setString('aiProvider', provider);
 }

@@ -21,6 +21,7 @@ class ExportImportService {
     required List<CoffeeRecord> coffeeRecords,
     required List<MedicineRecord> medicineRecords,
     required List<AlcoholRecord> alcoholRecords,
+    required List<NoteRecord> noteRecords,
   }) async {
     final choice = await showDialog<String>(
       context: context,
@@ -51,8 +52,9 @@ class ExportImportService {
 
     final sleepJson = <String, dynamic>{};
     sleepData.forEach((date, records) {
-      sleepJson[date.toIso8601String()] =
-          records.map((r) => r.toJson()).toList();
+      sleepJson[date.toIso8601String()] = records
+          .map((r) => r.toJson())
+          .toList();
     });
 
     final exportData = {
@@ -62,12 +64,14 @@ class ExportImportService {
       'coffeeRecords': coffeeRecords.map((r) => r.toJson()).toList(),
       'medicineRecords': medicineRecords.map((r) => r.toJson()).toList(),
       'alcoholRecords': alcoholRecords.map((r) => r.toJson()).toList(),
+      'noteRecords': noteRecords.map((r) => r.toJson()).toList(),
     };
 
     final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
-    final timestamp = DateTime.now()
-        .toIso8601String()
-        .replaceAll(RegExp(r'[:\.]'), '-');
+    final timestamp = DateTime.now().toIso8601String().replaceAll(
+      RegExp(r'[:\.]'),
+      '-',
+    );
     final fileName = 'sleep_diary_$timestamp.json';
 
     if (choice == 'share') {
@@ -133,11 +137,17 @@ class ExportImportService {
           .map((r) => AlcoholRecord.fromJson(r as Map<String, dynamic>))
           .toList();
 
+      final noteList = data['noteRecords'] as List? ?? [];
+      final newNoteRecords = noteList
+          .map((r) => NoteRecord.fromJson(r as Map<String, dynamic>))
+          .toList();
+
       return ImportedData(
         sleepData: newSleepData,
         coffeeRecords: newCoffeeRecords,
         medicineRecords: newMedicineRecords,
         alcoholRecords: newAlcoholRecords,
+        noteRecords: newNoteRecords,
       );
     } catch (e) {
       if (context.mounted) {
@@ -155,11 +165,13 @@ class ImportedData {
   final List<CoffeeRecord> coffeeRecords;
   final List<MedicineRecord> medicineRecords;
   final List<AlcoholRecord> alcoholRecords;
+  final List<NoteRecord> noteRecords;
 
   ImportedData({
     required this.sleepData,
     required this.coffeeRecords,
     required this.medicineRecords,
     required this.alcoholRecords,
+    required this.noteRecords,
   });
 }
