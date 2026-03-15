@@ -1,14 +1,30 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 
 class StorageService {
   late SharedPreferences _prefs;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  String _cachedApiKey = '';
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+
+    // Load API key from secure storage
+    _cachedApiKey = await _secureStorage.read(key: 'aiApiKey') ?? '';
+
+    // Migrate from SharedPreferences if key exists there but not in secure storage
+    if (_cachedApiKey.isEmpty) {
+      final legacyKey = _prefs.getString('aiApiKey') ?? '';
+      if (legacyKey.isNotEmpty) {
+        await _secureStorage.write(key: 'aiApiKey', value: legacyKey);
+        await _prefs.remove('aiApiKey');
+        _cachedApiKey = legacyKey;
+      }
+    }
   }
 
   // Theme
@@ -107,8 +123,11 @@ class StorageService {
   }
 
   // AI settings
-  String get aiApiKey => _prefs.getString('aiApiKey') ?? '';
-  Future<void> setAiApiKey(String key) => _prefs.setString('aiApiKey', key);
+  String get aiApiKey => _cachedApiKey;
+  Future<void> setAiApiKey(String key) async {
+    _cachedApiKey = key;
+    await _secureStorage.write(key: 'aiApiKey', value: key);
+  }
 
   String get aiProvider => _prefs.getString('aiProvider') ?? 'gemini';
   Future<void> setAiProvider(String provider) =>

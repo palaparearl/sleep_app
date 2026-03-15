@@ -6,7 +6,9 @@ import '../services/services.dart';
 import '../utils/helpers.dart';
 import '../widgets/widgets.dart';
 import '../app.dart';
+import 'cant_sleep_screen.dart';
 import 'dashboard_screen.dart';
+import 'doctors_screen.dart';
 
 typedef ActivityRecord = ({
   String letter,
@@ -613,13 +615,17 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
           ? _buildCalendarView()
           : _currentViewIndex == 1
           ? _buildTimelineView()
-          : DashboardScreen(
+          : _currentViewIndex == 2
+          ? DashboardScreen(
               sleepData: _sleepData,
               coffeeRecords: _coffeeRecords,
               medicineRecords: _medicineRecords,
               alcoholRecords: _alcoholRecords,
               storage: _storage,
-            ),
+            )
+          : _currentViewIndex == 3
+          ? CantSleepScreen(storage: _storage)
+          : const DoctorsScreen(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentViewIndex,
         onTap: (index) {
@@ -640,7 +646,16 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
             icon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.nightlight_round),
+            label: "Can't Sleep",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.local_hospital),
+            label: 'Doctors',
+          ),
         ],
+        type: BottomNavigationBarType.fixed,
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddTypeDialog(context),
