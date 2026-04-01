@@ -50,19 +50,19 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCJGus0bGRipVfHze3RKLR37T94zrMJpYY',
-    appId: '1:826006530074:web:586912330d406246b049a3',
-    messagingSenderId: '826006530074',
-    projectId: 'pahingapp-sleep',
-    authDomain: 'pahingapp-sleep.firebaseapp.com',
-    storageBucket: 'pahingapp-sleep.firebasestorage.app',
+    apiKey: String.fromEnvironment('FIREBASE_WEB_API_KEY'),
+    appId: String.fromEnvironment('FIREBASE_WEB_APP_ID'),
+    messagingSenderId: String.fromEnvironment('FIREBASE_WEB_MESSAGING_SENDER_ID'),
+    projectId: String.fromEnvironment('FIREBASE_WEB_PROJECT_ID'),
+    authDomain: String.fromEnvironment('FIREBASE_WEB_AUTH_DOMAIN'),
+    storageBucket: String.fromEnvironment('FIREBASE_WEB_STORAGE_BUCKET'),
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCZG3EZfnRMtG6SpcsewuQefJIZBlI4xdg',
-    appId: '1:826006530074:android:46aac373a5572e10b049a3',
-    messagingSenderId: '826006530074',
-    projectId: 'pahingapp-sleep',
-    storageBucket: 'pahingapp-sleep.firebasestorage.app',
+    apiKey: String.fromEnvironment('FIREBASE_ANDROID_API_KEY'),
+    appId: String.fromEnvironment('FIREBASE_ANDROID_APP_ID'),
+    messagingSenderId: String.fromEnvironment('FIREBASE_ANDROID_MESSAGING_SENDER_ID'),
+    projectId: String.fromEnvironment('FIREBASE_ANDROID_PROJECT_ID'),
+    storageBucket: String.fromEnvironment('FIREBASE_ANDROID_STORAGE_BUCKET'),
   );
 }

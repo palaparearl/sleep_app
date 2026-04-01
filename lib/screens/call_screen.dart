@@ -28,6 +28,7 @@ class _CallScreenState extends State<CallScreen> {
   bool _isMuted = false;
   bool _isCameraOff = false;
   bool _connected = false;
+  bool _ending = false;
   StreamSubscription? _remoteStreamSub;
   StreamSubscription? _callEndedSub;
 
@@ -65,15 +66,17 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   void _onCallEnded() {
-    if (mounted) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Call ended')),
-      );
-    }
+    if (!mounted || _ending) return;
+    _ending = true;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Call ended')),
+    );
   }
 
   Future<void> _hangUp() async {
+    if (_ending) return;
+    _ending = true;
     await _callService.hangUp(roomId: widget.roomId);
     if (mounted) Navigator.of(context).pop();
   }
@@ -94,6 +97,8 @@ class _CallScreenState extends State<CallScreen> {
   void dispose() {
     _remoteStreamSub?.cancel();
     _callEndedSub?.cancel();
+    // Fire-and-forget: dispose is synchronous but CallService cleanup is async.
+    // The _disposed guard in CallService prevents double cleanup.
     _callService.dispose();
     super.dispose();
   }

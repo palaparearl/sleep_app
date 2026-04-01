@@ -16,6 +16,8 @@ class CallService {
   StreamSubscription? _callDocSub;
   StreamSubscription? _candidateSub;
 
+  bool _disposed = false;
+
   final _onRemoteStreamController = StreamController<MediaStream>.broadcast();
   Stream<MediaStream> get onRemoteStream => _onRemoteStreamController.stream;
 
@@ -35,7 +37,27 @@ class CallService {
   }
 
   Future<void> dispose() async {
-    await hangUp();
+    if (_disposed) return;
+    _disposed = true;
+
+    // Cancel subscriptions first to prevent re-entrant callbacks
+    _callDocSub?.cancel();
+    _callDocSub = null;
+    _candidateSub?.cancel();
+    _candidateSub = null;
+
+    // Clear renderer sources before stopping tracks
+    localRenderer.srcObject = null;
+    remoteRenderer.srcObject = null;
+
+    _localStream?.getTracks().forEach((track) => track.stop());
+    _localStream?.dispose();
+    _localStream = null;
+    _remoteStream = null;
+
+    await _peerConnection?.close();
+    _peerConnection = null;
+
     await localRenderer.dispose();
     await remoteRenderer.dispose();
     _onRemoteStreamController.close();
@@ -62,6 +84,7 @@ class CallService {
     };
 
     pc.onTrack = (event) {
+      if (_disposed) return;
       if (event.streams.isNotEmpty) {
         _remoteStream = event.streams[0];
         remoteRenderer.srcObject = _remoteStream;
@@ -70,8 +93,8 @@ class CallService {
     };
 
     pc.onIceConnectionState = (state) {
-      if (state == RTCIceConnectionState.RTCIceConnectionStateDisconnected ||
-          state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
+      if (_disposed) return;
+      if (state == RTCIceConnectionState.RTCIceConnectionStateFailed ||
           state == RTCIceConnectionState.RTCIceConnectionStateClosed) {
         _onCallEndedController.add(null);
       }
@@ -117,6 +140,7 @@ class CallService {
 
     // Listen for answer
     _callDocSub = callDoc.snapshots().listen((snapshot) async {
+      if (_disposed) return;
       final data = snapshot.data();
       if (data == null) return;
 
@@ -224,22 +248,7 @@ class CallService {
 
   /// Hang up and clean up resources.
   Future<void> hangUp({String? roomId}) async {
-    _callDocSub?.cancel();
-    _candidateSub?.cancel();
-
-    _localStream?.getTracks().forEach((track) => track.stop());
-    _localStream?.dispose();
-    _localStream = null;
-
-    await _peerConnection?.close();
-    _peerConnection = null;
-
-    localRenderer.srcObject = null;
-    remoteRenderer.srcObject = null;
-
-    _remoteStream = null;
-
-    // Mark call as ended in Firestore
+    // Mark call as ended in Firestore first (before tearing down connections)
     if (roomId != null) {
       try {
         await _db
@@ -250,6 +259,24 @@ class CallService {
             .update({'ended': true});
       } catch (_) {}
     }
+
+    // Cancel subscriptions to prevent re-entrant callbacks
+    _callDocSub?.cancel();
+    _callDocSub = null;
+    _candidateSub?.cancel();
+    _candidateSub = null;
+
+    // Clear renderer sources before stopping tracks
+    localRenderer.srcObject = null;
+    remoteRenderer.srcObject = null;
+
+    _localStream?.getTracks().forEach((track) => track.stop());
+    _localStream?.dispose();
+    _localStream = null;
+    _remoteStream = null;
+
+    await _peerConnection?.close();
+    _peerConnection = null;
   }
 
   /// Decline an incoming call without answering. Marks call as ended in Firestore.

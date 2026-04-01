@@ -12,6 +12,14 @@
 .swiftpm/
 migrate_working_dir/
 
+# Environment / secrets
+.env
+!.env.example
+
+# Firebase config with API keys
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
 # IntelliJ related
 *.iml
 *.ipr
