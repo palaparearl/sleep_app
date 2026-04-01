@@ -612,10 +612,8 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
         ],
       ),
       body: _currentViewIndex == 0
-          ? _buildCalendarView()
-          : _currentViewIndex == 1
           ? _buildTimelineView()
-          : _currentViewIndex == 2
+          : _currentViewIndex == 1
           ? DashboardScreen(
               sleepData: _sleepData,
               coffeeRecords: _coffeeRecords,
@@ -623,7 +621,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
               alcoholRecords: _alcoholRecords,
               storage: _storage,
             )
-          : _currentViewIndex == 3
+          : _currentViewIndex == 2
           ? CantSleepScreen(storage: _storage)
           : const DoctorsScreen(),
       bottomNavigationBar: BottomNavigationBar(
@@ -634,10 +632,6 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
           });
         },
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_month),
-            label: 'Calendar',
-          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.timeline),
             label: 'Timeline',
@@ -656,11 +650,6 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
           ),
         ],
         type: BottomNavigationBarType.fixed,
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddTypeDialog(context),
-        tooltip: 'Add',
-        child: const Icon(Icons.add),
       ),
     );
   }
@@ -1173,6 +1162,115 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
     );
   }
 
+  // ==================== DATE RECORDS BOTTOM SHEET ====================
+
+  void _showDateRecordsSheet(BuildContext context, DateTime date) {
+    setState(() {
+      _selectedDay = date;
+    });
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.3,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (context, scrollController) {
+                return Column(
+                  children: [
+                    // Drag handle
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[400],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    // Date header + Add button
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${formatDate(date)} — ${getDayName(date)}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle, color: Colors.deepPurple),
+                            tooltip: 'Add entry',
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _showAddTypeDialog(context);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Filter chips
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: FilterChipsWidget(
+                        showSleep: _showSleep,
+                        showCoffee: _showCoffee,
+                        showMedicine: _showMedicine,
+                        showAlcohol: _showAlcohol,
+                        showNotes: _showNotes,
+                        onSleepChanged: (val) {
+                          setState(() => _showSleep = val);
+                          setSheetState(() {});
+                        },
+                        onCoffeeChanged: (val) {
+                          setState(() => _showCoffee = val);
+                          setSheetState(() {});
+                        },
+                        onMedicineChanged: (val) {
+                          setState(() => _showMedicine = val);
+                          setSheetState(() {});
+                        },
+                        onAlcoholChanged: (val) {
+                          setState(() => _showAlcohol = val);
+                          setSheetState(() {});
+                        },
+                        onNotesChanged: (val) {
+                          setState(() => _showNotes = val);
+                          setSheetState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Record list
+                    Expanded(
+                      child: SingleChildScrollView(
+                        controller: scrollController,
+                        child: _buildSleepRecordsList(),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ==================== TIMELINE VIEW ====================
 
   Widget _buildTimelineView() {
@@ -1400,39 +1498,45 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: gridColor)),
       ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          date.toString().split(' ')[0],
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _showDateRecordsSheet(context, date),
+            child: Container(
+              width: 120,
+              color: isDark ? Colors.deepPurple.withValues(alpha: 0.15) : Colors.deepPurple.withValues(alpha: 0.06),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      date.toString().split(' ')[0],
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.deepPurple[200] : Colors.deepPurple,
                       ),
-                      if (_notesForDate(date).isNotEmpty)
-                        GestureDetector(
-                          onTap: () => _showNoteTooltip(context, date),
-                          child: const Icon(
-                            Icons.note,
-                            size: 16,
-                            color: Colors.amber,
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          getDayName(date),
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: isDark ? Colors.grey[400] : null,
                           ),
                         ),
-                    ],
-                  ),
-                  Text(getDayName(date), style: const TextStyle(fontSize: 9)),
-                ],
+                        const SizedBox(width: 2),
+                        Icon(Icons.chevron_right, size: 12, color: isDark ? Colors.deepPurple[200] : Colors.deepPurple[300]),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1579,6 +1683,17 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                               ? Colors.orange
                               : Colors.blue,
                           borderRadius: BorderRadius.circular(6),
+                          boxShadow:
+                              (selectedRecordKey != null &&
+                                  selectedRecordKey == thisRecordKey)
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.orange.withValues(alpha: 0.7),
+                                    blurRadius: 10,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                              : null,
                         ),
                       ),
                     ),
@@ -1589,6 +1704,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

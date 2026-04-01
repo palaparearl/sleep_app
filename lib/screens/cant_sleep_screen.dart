@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -73,40 +74,21 @@ class _CantSleepScreenState extends State<CantSleepScreen>
 }
 
 // --- Audiobooks Section Widget ---
-// --- Audiobooks Section Widget ---
 class _Audiobook {
   final String title;
   final String author;
   final String duration;
-  final String url;
+  final String listenUrl;
   const _Audiobook({
     required this.title,
     required this.author,
     required this.duration,
-    required this.url,
+    required this.listenUrl,
   });
 }
 
-const _audiobooks = [
-  _Audiobook(
-    title: 'The Secret Garden',
-    author: 'Frances Hodgson Burnett',
-    duration: '7h 45m',
-    url: 'https://www.archive.org/download/secretgarden_1007_librivox/secretgarden_1007_librivox.m3u',
-  ),
-  _Audiobook(
-    title: 'A Child’s Garden of Verses',
-    author: 'Robert Louis Stevenson',
-    duration: '1h 20m',
-    url: 'https://www.archive.org/download/childsgardenofverses_0907_librivox/childsgardenofverses_0907_librivox.m3u',
-  ),
-  _Audiobook(
-    title: 'Fairy Tales by Hans Christian Andersen',
-    author: 'Hans Christian Andersen',
-    duration: '5h 10m',
-    url: 'https://www.archive.org/download/fairytales_0707_librivox/fairytales_0707_librivox.m3u',
-  ),
-];
+// Sleep-friendly search queries for LibriVox
+const _sleepQueries = ['fairy', 'garden', 'dream', 'night', 'sleep', 'gentle', 'wonder', 'nature'];
 
 class _AudiobooksSection extends StatefulWidget {
   @override
@@ -114,76 +96,318 @@ class _AudiobooksSection extends StatefulWidget {
 }
 
 class _AudiobooksSectionState extends State<_AudiobooksSection> {
-  final AudioPlayer _player = AudioPlayer();
-  int? _playingIndex;
+  final _audio = SleepAudioService();
+  List<_Audiobook> _books = [];
+  bool _loading = true;
+  String? _error;
+  Timer? _uiTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchBooks();
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
 
   @override
   void dispose() {
-    _player.dispose();
+    _uiTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _fetchBooks() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final rng = Random();
+      final query = _sleepQueries[rng.nextInt(_sleepQueries.length)];
+      final offset = rng.nextInt(20);
+      final url = Uri.parse(
+        'https://librivox.org/api/feed/audiobooks'
+        '?title=^$query&format=json&limit=5&offset=$offset&extended=1',
+      );
+      final resp = await http.get(url);
+      if (resp.statusCode != 200) throw Exception('Failed to load audiobooks');
+
+      final data = jsonDecode(resp.body);
+      final List books = data['books'] ?? [];
+
+      final parsed = <_Audiobook>[];
+      for (final b in books) {
+        final authors = b['authors'] as List? ?? [];
+        final authorName = authors.isNotEmpty
+            ? '${authors[0]['first_name'] ?? ''} ${authors[0]['last_name'] ?? ''}'.trim()
+            : 'Unknown';
+        final totaltime = b['totaltime'] as String? ?? '';
+
+        // Get first section's listen_url for direct playback
+        final sections = b['sections'] as List? ?? [];
+        final listenUrl = sections.isNotEmpty
+            ? (sections[0]['listen_url'] as String? ?? '')
+            : '';
+        if (listenUrl.isEmpty) continue;
+
+        parsed.add(_Audiobook(
+          title: b['title'] as String? ?? 'Untitled',
+          author: authorName,
+          duration: totaltime,
+          listenUrl: listenUrl,
+        ));
+      }
+
+      setState(() {
+        _books = parsed;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loading = false;
+        _error = 'Could not load audiobooks';
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isAudiobookPlaying = _audio.currentCategory.startsWith('Audiobook');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            'Recommended Audiobooks',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.grey[400] : Colors.grey[700],
-            ),
-          ),
-        ),
-        for (int i = 0; i < _audiobooks.length; i++)
-          Card(
-            color: isDark ? Colors.deepPurple[900] : Colors.deepPurple[50],
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Colors.deepPurple,
-                child: Icon(Icons.headphones, color: Colors.white),
+        if (isAudiobookPlaying) ...[
+          _buildNowPlaying(isDark),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Recommended Audiobooks',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.grey[400] : Colors.grey[700],
+                ),
               ),
-              title: Text(_audiobooks[i].title),
-              subtitle: Text('${_audiobooks[i].author} · ${_audiobooks[i].duration}'),
-              trailing: _playingIndex == i && _player.playing
-                  ? Icon(Icons.pause)
-                  : Icon(Icons.play_arrow),
-              onTap: () async {
-                try {
-                  if (_playingIndex == i && _player.playing) {
-                    await _player.pause();
-                    setState(() {});
-                    return;
-                  }
-                  // Fetch M3U and extract first MP3 URL
-                  final m3uResp = await http.get(Uri.parse(_audiobooks[i].url));
-                  final lines = m3uResp.body.split(RegExp(r'\r?\n'));
-                  final mp3Url = lines.firstWhere(
-                    (l) => l.trim().endsWith('.mp3') && !l.trim().startsWith('#'),
-                    orElse: () => '',
-                  );
-                  if (mp3Url.isEmpty) throw Exception('No MP3 found in playlist');
-                  await _player.setUrl(mp3Url.trim());
-                  await _player.play();
-                  setState(() => _playingIndex = i);
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Playback error: ${e.toString()}'),
-                      duration: Duration(seconds: 3),
-                    ),
-                  );
-                }
-              },
             ),
-          ),
+            IconButton(
+              icon: Icon(Icons.refresh, size: 20),
+              tooltip: 'Load new audiobooks',
+              color: Colors.deepPurple,
+              onPressed: _loading ? null : _fetchBooks,
+            ),
+          ],
+        ),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: Column(
+                children: [
+                  Text(_error!, style: TextStyle(color: Colors.grey[500])),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: _fetchBooks,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else if (_books.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: Text('No audiobooks found', style: TextStyle(color: Colors.grey[500])),
+            ),
+          )
+        else
+          for (int i = 0; i < _books.length; i++)
+            Card(
+              color: isDark ? Colors.deepPurple[900] : Colors.deepPurple[50],
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.deepPurple,
+                  child: Icon(Icons.headphones, color: Colors.white),
+                ),
+                title: Text(_books[i].title),
+                subtitle: Text('${_books[i].author} \u00b7 ${_books[i].duration}'),
+                trailing: _audio.currentTitle == _books[i].title && _audio.isPlaying
+                    ? Icon(Icons.pause)
+                    : Icon(Icons.play_arrow),
+                onTap: () async {
+                  try {
+                    if (_audio.currentTitle == _books[i].title) {
+                      await _audio.togglePlayPause();
+                      setState(() {});
+                      return;
+                    }
+                    await _audio.playAudiobook(
+                      _books[i].listenUrl,
+                      _books[i].title,
+                      _books[i].author,
+                    );
+                    setState(() {});
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Playback error: ${e.toString()}'),
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
       ],
+    );
+  }
+
+  String _formatDuration(Duration d) {
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildNowPlaying(bool isDark) {
+    final isPlaying = _audio.isPlaying;
+    final position = _audio.player.position;
+    final duration = _audio.player.duration ?? Duration.zero;
+    final timerRemaining = _audio.sleepTimerRemaining;
+
+    return Card(
+      color: isDark ? Colors.deepPurple[900] : Colors.deepPurple[50],
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.headphones, color: Colors.deepPurple[300], size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _audio.currentTitle,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        _audio.currentCategory,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+                  onPressed: () async {
+                    await _audio.togglePlayPause();
+                    setState(() {});
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.stop),
+                  onPressed: () async {
+                    await _audio.stop();
+                    setState(() {});
+                  },
+                ),
+              ],
+            ),
+            // Seek bar
+            if (duration > Duration.zero) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    _formatDuration(position),
+                    style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: position.inMilliseconds.toDouble().clamp(0, duration.inMilliseconds.toDouble()),
+                      min: 0,
+                      max: duration.inMilliseconds.toDouble(),
+                      onChanged: (v) {
+                        _audio.player.seek(Duration(milliseconds: v.toInt()));
+                      },
+                      activeColor: Colors.deepPurple,
+                    ),
+                  ),
+                  Text(
+                    _formatDuration(duration),
+                    style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ],
+            // Sleep timer row
+            Row(
+              children: [
+                Icon(Icons.timer, size: 16,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                const SizedBox(width: 6),
+                Text(
+                  timerRemaining != null
+                      ? 'Stops in ${timerRemaining.inMinutes}:${(timerRemaining.inSeconds % 60).toString().padLeft(2, '0')}'
+                      : 'Sleep Timer',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  ),
+                ),
+                const Spacer(),
+                if (timerRemaining != null)
+                  ActionChip(
+                    label: const Text('Cancel', style: TextStyle(fontSize: 11)),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      _audio.cancelSleepTimer();
+                      setState(() {});
+                    },
+                  )
+                else
+                  for (final mins in [15, 30, 45, 60])
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: ActionChip(
+                        label: Text('${mins}m', style: const TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          _audio.setSleepTimer(Duration(minutes: mins));
+                          setState(() {});
+                        },
+                      ),
+                    ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -341,30 +565,6 @@ class _ListenTabState extends State<_ListenTab> {
               ],
             ),
             const SizedBox(height: 8),
-            // Volume slider
-            Row(
-              children: [
-                Icon(Icons.volume_down, size: 18,
-                    color: isDark ? Colors.grey[400] : Colors.grey[600]),
-                Expanded(
-                  child: StreamBuilder<double>(
-                    stream: _audio.player.volumeStream,
-                    builder: (context, snapshot) {
-                      final vol = snapshot.data ?? 1.0;
-                      return Slider(
-                        value: vol,
-                        min: 0,
-                        max: 1,
-                        onChanged: (v) => _audio.player.setVolume(v),
-                        activeColor: Colors.deepPurple,
-                      );
-                    },
-                  ),
-                ),
-                Icon(Icons.volume_up, size: 18,
-                    color: isDark ? Colors.grey[400] : Colors.grey[600]),
-              ],
-            ),
             // Sleep timer row
             Row(
               children: [
@@ -1112,7 +1312,7 @@ class _BreatheTabState extends State<_BreatheTab>
     final second = value * _cycle;
     if (second < _inhale) {
       // Expanding during inhale
-      return 0.5 + 0.5 * (second / _inhale);
+      return 0.7 + 0.3 * (second / _inhale);
     }
     if (second < _inhale + _hold) {
       // Full during hold
@@ -1120,7 +1320,7 @@ class _BreatheTabState extends State<_BreatheTab>
     }
     // Shrinking during exhale
     final exhaleProgress = (second - _inhale - _hold) / _exhale;
-    return 1.0 - 0.5 * exhaleProgress;
+    return 1.0 - 0.3 * exhaleProgress;
   }
 
   Color _getPhaseColor(double value) {
@@ -1161,7 +1361,7 @@ class _BreatheTabState extends State<_BreatheTab>
               animation: _controller,
               builder: (context, child) {
                 final value = _controller.value;
-                final scale = _isRunning ? _getCircleScale(value) : 0.5;
+                final scale = _isRunning ? _getCircleScale(value) : 0.7;
                 final color = _isRunning
                     ? _getPhaseColor(value)
                     : (isDark ? Colors.grey[700]! : Colors.grey[300]!);
