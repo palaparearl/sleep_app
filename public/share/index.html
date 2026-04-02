@@ -70,8 +70,18 @@
     .timeline-header button:hover { background: #21262d; }
     .timeline-header .range { font-size: 16px; font-weight: 600; min-width: 160px; text-align: center; }
 
-    .timeline-wrapper { overflow-x: auto; padding: 0; }
-    .timeline-table { min-width: 900px; border-collapse: collapse; }
+    .timeline-wrapper {
+      overflow-x: auto;
+      padding-left: 12px;
+      padding-right: 12px;
+      box-sizing: border-box;
+    }
+    .timeline-table {
+      min-width: 900px;
+      border-collapse: collapse;
+      border-left: 1px solid #21262d;
+      border-right: 1px solid #21262d;
+    }
 
     /* Each row is a flex row: date label + hours container */
     .tl-row {
@@ -84,6 +94,12 @@
       cursor: pointer;
     }
     .tl-date:hover { background: #161b22; }
+    .tl-date.selected {
+      background: #23263a;
+      border-left: 3px solid #b39ddb;
+      color: #fff;
+      transition: background 0.2s, border 0.2s;
+    }
     .tl-date .date-text { font-weight: 600; font-size: 13px; }
     .tl-date .day-name { font-size: 11px; color: #666; }
     .tl-hours {
@@ -569,6 +585,7 @@
           html += `<span class="day-name">${dayName(d)} ›</span>`;
           html += `</div><div class="tl-hours" style="min-height:${rowHeight}px;">`;
 
+
           // Sleep bars positioned as % of full 24-hour width
           for (const r of recs) {
             const startMins = minutesSinceMidnight(r.sleepTime);
@@ -659,7 +676,10 @@
         container.querySelectorAll('.tl-date[data-date]').forEach(el => {
           el.addEventListener('click', () => {
             const detail = document.getElementById('detail-' + el.dataset.date);
-            if (detail) detail.classList.toggle('open');
+            if (detail) {
+              const isOpen = detail.classList.toggle('open');
+              el.classList.toggle('selected', isOpen);
+            }
           });
         });
       }
