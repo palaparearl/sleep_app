@@ -21,12 +21,14 @@ class _ChatTabState extends State<ChatTab> {
   _ChatState _state = _ChatState.idle;
   StreamSubscription? _matchSub;
   StreamSubscription? _roomActiveSub;
+  StreamSubscription? _presenceSub;
   StreamSubscription? _incomingCallSub;
 
   @override
   void dispose() {
     _matchSub?.cancel();
     _roomActiveSub?.cancel();
+    _presenceSub?.cancel();
     _incomingCallSub?.cancel();
     _chatService.cleanup();
     _msgController.dispose();
@@ -41,10 +43,20 @@ class _ChatTabState extends State<ChatTab> {
       if (roomId != null && mounted) {
         setState(() => _state = _ChatState.chatting);
 
-        // Listen for partner disconnect
+        // Mark ourselves online in RTDB with onDisconnect handler
+        _chatService.goOnline();
+
+        // Listen for explicit "End" via Firestore ended flag
         _roomActiveSub = _chatService.roomActive().listen((active) {
-          if (!active && mounted) {
-            setState(() => _state = _ChatState.partnerLeft);
+          if (!active && mounted && _state == _ChatState.chatting) {
+            _onPartnerLeft();
+          }
+        });
+
+        // Listen for partner presence via RTDB (covers force-quit, network loss)
+        _presenceSub = _chatService.partnerPresence().listen((online) {
+          if (!online && mounted && _state == _ChatState.chatting) {
+            _onPartnerLeft();
           }
         });
 
@@ -52,6 +64,12 @@ class _ChatTabState extends State<ChatTab> {
         _listenForIncomingCalls();
       }
     });
+  }
+
+  void _onPartnerLeft() {
+    if (!mounted || _state != _ChatState.chatting) return;
+    _presenceSub?.cancel();
+    setState(() => _state = _ChatState.partnerLeft);
   }
 
   void _listenForIncomingCalls() {
@@ -169,6 +187,7 @@ class _ChatTabState extends State<ChatTab> {
   void _endChat() async {
     _matchSub?.cancel();
     _roomActiveSub?.cancel();
+    _presenceSub?.cancel();
     _incomingCallSub?.cancel();
     await _chatService.endChat();
     if (mounted) setState(() => _state = _ChatState.idle);
@@ -177,6 +196,7 @@ class _ChatTabState extends State<ChatTab> {
   void _newChat() {
     _matchSub?.cancel();
     _roomActiveSub?.cancel();
+    _presenceSub?.cancel();
     _incomingCallSub?.cancel();
     _chatService.cleanup();
     setState(() => _state = _ChatState.idle);

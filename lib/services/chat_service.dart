@@ -2,14 +2,26 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 
 class ChatService {
+  static const _dbUrl = String.fromEnvironment(
+    'FIREBASE_DATABASE_URL',
+    defaultValue: 'https://pahingapp-sleep-default-rtdb.asia-southeast1.firebasedatabase.app',
+  );
+
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseDatabase _rtdb = FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: _dbUrl,
+  );
   final String _userId = _generateUserId();
 
   String? _currentRoomId;
   StreamSubscription? _waitingSub;
   StreamSubscription? _roomSub;
+  StreamSubscription? _presenceSub;
 
   String get userId => _userId;
   String? get currentRoomId => _currentRoomId;
@@ -131,6 +143,7 @@ class ChatService {
   }
 
   /// Listen for the other user disconnecting.
+  /// Uses Firestore `ended` flag + Realtime Database presence.
   Stream<bool> roomActive() {
     if (_currentRoomId == null) return const Stream.empty();
 
@@ -145,8 +158,61 @@ class ChatService {
     });
   }
 
+  /// Monitor partner presence via RTDB. Returns a stream that emits
+  /// `false` when the partner goes offline.
+  Stream<bool> partnerPresence() {
+    if (_currentRoomId == null) return const Stream.empty();
+
+    final controller = StreamController<bool>.broadcast();
+
+    // We need to find the partner's userId first
+    _db.collection('chatRooms').doc(_currentRoomId).get().then((doc) {
+      final data = doc.data();
+      if (data == null) return;
+      final users = data['users'] as List<dynamic>?;
+      if (users == null) return;
+      final partnerId = users.cast<String>().firstWhere(
+            (id) => id != _userId,
+            orElse: () => '',
+          );
+      if (partnerId.isEmpty) return;
+
+      // Listen to partner's presence node in RTDB
+      final ref = _rtdb.ref('presence/$_currentRoomId/$partnerId');
+      _presenceSub = ref.onValue.listen((event) {
+        final value = event.snapshot.value;
+        // null means the node doesn't exist yet (partner still joining) — treat as online
+        // true means online, false means explicitly went offline
+        if (value == null) return;
+        controller.add(value == true);
+      });
+    });
+
+    return controller.stream;
+  }
+
+  /// Set our presence as online and register an onDisconnect handler
+  /// so Firebase server marks us offline the instant we lose connection.
+  Future<void> goOnline() async {
+    if (_currentRoomId == null) return;
+    final ref = _rtdb.ref('presence/$_currentRoomId/$_userId');
+    await ref.set(true);
+    await ref.onDisconnect().set(false);
+  }
+
+  /// Explicitly go offline (called when user taps End or navigates away).
+  Future<void> goOffline() async {
+    if (_currentRoomId == null) return;
+    final ref = _rtdb.ref('presence/$_currentRoomId/$_userId');
+    await ref.set(false);
+    await ref.onDisconnect().cancel();
+  }
+
   /// End the chat — marks room as ended and cleans up.
   Future<void> endChat() async {
+    await goOffline();
+    _presenceSub?.cancel();
+    _presenceSub = null;
     _waitingSub?.cancel();
     _roomSub?.cancel();
 
@@ -164,6 +230,9 @@ class ChatService {
 
   /// Full cleanup — delete room and its messages.
   Future<void> cleanup() async {
+    await goOffline();
+    _presenceSub?.cancel();
+    _presenceSub = null;
     _waitingSub?.cancel();
     _roomSub?.cancel();
     await _db.collection('waiting').doc(_userId).delete();
