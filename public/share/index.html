@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PahingApp — Shared Sleep Diary</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    /* App bar */
+    .app-bar {
+      background: #161b22;
+      padding: 16px 24px;
+      text-align: center;
+      border-bottom: 1px solid #21262d;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .app-bar h1 { font-size: 20px; font-weight: 600; color: #e6e6e6; }
+    .app-bar .subtitle { font-size: 12px; color: #666; margin-top: 2px; }
+
+    /* Bottom nav */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: #161b22;
+      border-top: 1px solid #21262d;
+      display: flex; z-index: 100;
+    }
+    .nav-item {
+      flex: 1; padding: 10px 0; text-align: center; cursor: pointer;
+      color: #666; font-size: 11px; transition: color 0.2s;
+    }
+    .nav-item.active { color: #b39ddb; }
+    .nav-item:hover { color: #999; }
+    .nav-item svg { display: block; margin: 0 auto 3px; width: 22px; height: 22px; }
+    .nav-item.active svg { fill: #b39ddb; stroke: #b39ddb; }
+    .nav-item svg { fill: #666; stroke: #666; }
+
+    /* Content area */
+    .content { padding-bottom: 60px; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Loading / Error */
+    .loading, .error { text-align: center; padding: 80px 24px; }
+    .loading .spinner {
+      width: 40px; height: 40px; border: 3px solid #333;
+      border-top-color: #b39ddb; border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error h2 { color: #ef5350; margin-bottom: 8px; }
+
+    /* ============ TIMELINE VIEW ============ */
+    .timeline-header {
+      display: flex; align-items: center; justify-content: center;
+      padding: 14px 16px; gap: 16px;
+      background: #161b22; border-bottom: 1px solid #21262d;
+    }
+    .timeline-header button {
+      background: none; border: none; color: #e0e0e0; font-size: 22px;
+      cursor: pointer; padding: 4px 10px; border-radius: 6px;
+    }
+    .timeline-header button:hover { background: #21262d; }
+    .timeline-header .range { font-size: 16px; font-weight: 600; min-width: 160px; text-align: center; }
+
+    .timeline-wrapper { overflow-x: auto; padding: 0; }
+    .timeline-table { min-width: 900px; border-collapse: collapse; }
+
+    /* Each row is a flex row: date label + hours container */
+    .tl-row {
+      display: flex; border-bottom: 1px solid #1a1f26;
+    }
+    .tl-date {
+      width: 130px; min-width: 130px; padding: 8px 12px;
+      font-size: 13px; color: #ccc; border-right: 1px solid rgba(255,255,255,0.12);
+      display: flex; flex-direction: column; justify-content: center;
+      cursor: pointer;
+    }
+    .tl-date:hover { background: #161b22; }
+    .tl-date .date-text { font-weight: 600; font-size: 13px; }
+    .tl-date .day-name { font-size: 11px; color: #666; }
+    .tl-hours {
+      flex: 1; position: relative; min-height: 52px;
+      /* Draw one vertical gridline per hour */
+      background-image: linear-gradient(
+        to right,
+        rgba(255,255,255,0.12) 0px, rgba(255,255,255,0.12) 1px,
+        transparent 1px, transparent 100%
+      );
+      background-size: calc(100% / 24) 100%;
+      background-position: calc(100% / 24) 0;
+    }
+
+    /* Header row for time labels */
+    .tl-header { border-bottom: 1px solid #21262d; }
+    .tl-header .tl-date {
+      font-weight: 600; color: #888; font-size: 12px;
+      cursor: default;
+      border-right: none;
+    }
+    .tl-header .tl-hours {
+      display: flex; min-height: auto; background: none;
+      position: relative;
+    }
+    .tl-hour-label {
+      flex: 1; font-size: 9px; color: #666;
+      padding: 6px 0;
+      writing-mode: vertical-lr;
+      text-orientation: mixed;
+      transform: rotate(180deg);
+      display: flex; align-items: flex-end; justify-content: flex-start;
+    }
+
+    .sleep-bar {
+      position: absolute; top: 6px; height: 24px;
+      background: #42a5f5; border-radius: 4px;
+      min-width: 3px; z-index: 2; cursor: pointer;
+      transition: box-shadow 0.2s, filter 0.2s;
+    }
+    .sleep-bar:hover {
+      background: #ffa726;
+      box-shadow: 0 0 14px 5px rgba(255,167,38,0.5);
+    }
+    .sleep-bar .tooltip, .activity-group .tooltip {
+      display: none; position: absolute; bottom: 100%; left: 50%;
+      transform: translateX(-50%); background: #2d333b; color: #e6e6e6;
+      padding: 6px 10px; border-radius: 6px; font-size: 11px;
+      white-space: nowrap; margin-bottom: 6px; z-index: 10;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      pointer-events: none;
+    }
+    .sleep-bar:hover .tooltip, .activity-group:hover .tooltip { display: block; }
+
+    .activity-group {
+      position: absolute; bottom: 0; height: 20px; z-index: 3; cursor: pointer;
+    }
+    .activity-group:hover .a-marker {
+      box-shadow: 0 0 8px 3px rgba(255,255,255,0.25);
+      filter: brightness(1.2);
+    }
+    .activity-group:hover .a-line {
+      box-shadow: 0 0 8px 3px rgba(255,255,255,0.2);
+      filter: brightness(1.3);
+    }
+    .a-marker {
+      position: absolute; bottom: 0; width: 16px; height: 16px;
+      border-radius: 50%; font-size: 9px; line-height: 16px;
+      text-align: center; font-weight: 700; color: #fff;
+      transition: box-shadow 0.2s, filter 0.2s;
+    }
+    .a-marker.coffee { background: #5d4037; }
+    .a-marker.alcohol { background: #c62828; }
+    .a-marker.medicine { background: #2e7d32; }
+    .a-line {
+      position: absolute; bottom: 7px; height: 2px;
+    }
+    .a-line.coffee { background: #8d6e63; }
+    .a-line.alcohol { background: #ef5350; }
+    .a-line.medicine { background: #66bb6a; }
+
+    /* Day detail panel */
+    .day-detail {
+      display: none; padding: 16px 20px; background: #161b22;
+      border-bottom: 1px solid #21262d;
+    }
+    .day-detail.open { display: block; }
+    .day-detail h3 { font-size: 14px; margin-bottom: 10px; color: #b39ddb; }
+    .detail-record {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid #1a1f26;
+      font-size: 13px;
+    }
+    .detail-record:last-child { border-bottom: none; }
+    .detail-icon {
+      width: 28px; height: 28px; border-radius: 6px; text-align: center;
+      line-height: 28px; font-size: 14px; flex-shrink: 0;
+    }
+
+    /* ============ DASHBOARD VIEW ============ */
+    .dashboard { padding: 16px; }
+
+    /* Summary row */
+    .summary-row {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 10px; margin-bottom: 16px;
+    }
+    .summary-card {
+      background: #161b22; border-radius: 12px; padding: 14px 10px;
+      text-align: center;
+    }
+    .summary-card .icon { font-size: 28px; margin-bottom: 4px; }
+    .summary-card .value { font-size: 18px; font-weight: 700; color: #e6e6e6; }
+    .summary-card .label { font-size: 11px; color: #666; margin-top: 2px; }
+
+    /* Chart cards */
+    .chart-card {
+      background: #161b22; border-radius: 12px; padding: 16px;
+      margin-bottom: 16px;
+    }
+    .chart-card h3 {
+      font-size: 14px; font-weight: 600; color: #e6e6e6; margin-bottom: 12px;
+    }
+    .chart-card canvas { width: 100% !important; }
+
+    /* Stat pair row */
+    .stat-pair {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px; margin-bottom: 16px;
+    }
+    .stat-card {
+      background: #161b22; border-radius: 12px; padding: 16px;
+    }
+    .stat-card .stat-label { font-size: 12px; color: #888; display: flex; align-items: center; gap: 6px; }
+    .stat-card .stat-label .icon { font-size: 16px; }
+    .stat-card .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .stat-card .stat-sub { font-size: 12px; color: #666; margin-top: 2px; }
+
+    /* Activity badges */
+    .activity-row {
+      display: flex; justify-content: space-evenly; padding: 12px 0;
+    }
+    .activity-badge { text-align: center; }
+    .activity-badge .badge-icon {
+      width: 50px; height: 50px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; margin: 0 auto 6px;
+    }
+    .activity-badge .badge-count { font-size: 22px; font-weight: 700; }
+    .activity-badge .badge-label { font-size: 12px; color: #888; }
+
+    /* Insights */
+    .insights-card {
+      background: #161b22; border-radius: 12px; padding: 16px;
+      margin-bottom: 16px;
+    }
+    .insights-header {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 12px; font-size: 14px; font-weight: 600;
+    }
+    .insight-row {
+      display: flex; gap: 10px; padding: 8px 0;
+      border-bottom: 1px solid #1a1f26;
+    }
+    .insight-row:last-child { border-bottom: none; }
+    .insight-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .insight-title { font-size: 13px; font-weight: 600; }
+    .insight-desc { font-size: 12px; color: #999; margin-top: 2px; }
+    .disclaimer {
+      display: flex; gap: 8px; align-items: flex-start;
+      margin-top: 12px; padding-top: 12px; border-top: 1px solid #1a1f26;
+      font-size: 11px; color: #666; font-style: italic;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      .summary-row { grid-template-columns: repeat(2, 1fr); }
+      .stat-pair { grid-template-columns: 1fr; }
+      .timeline-grid { min-width: 700px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-bar">
+    <h1>PahingApp</h1>
+    <div class="subtitle">Shared read-only view</div>
+  </div>
+
+  <div class="content" id="app">
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Loading sleep diary...</p>
+    </div>
+    <div class="error" id="error" style="display:none;">
+      <h2>Not Found</h2>
+      <p>This shared link is invalid or has expired.</p>
+    </div>
+    <div id="content-wrap" style="display:none;">
+      <div id="tab-timeline" class="tab-content active"></div>
+      <div id="tab-dashboard" class="tab-content"></div>
+    </div>
+  </div>
+
+  <div class="bottom-nav" id="bottom-nav" style="display:none;">
+    <div class="nav-item active" data-tab="timeline">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 20h20M6 16V8M10 16V4M14 16v-5M18 16V8"/></svg>
+      Timeline
+    </div>
+    <div class="nav-item" data-tab="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+    import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCJGus0bGRipVfHze3RKLR37T94zrMJpYY",
+      authDomain: "pahingapp-sleep.firebaseapp.com",
+      projectId: "pahingapp-sleep",
+      storageBucket: "pahingapp-sleep.firebasestorage.app",
+      messagingSenderId: "826006530074",
+      appId: "1:826006530074:web:586912330d406246b049a3"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const path = window.location.pathname;
+    const match = path.match(/\/share\/([a-z0-9]+)/);
+    if (!match) showError();
+    else loadData(match[1]);
+
+    async function loadData(token) {
+      try {
+        const snap = await getDoc(doc(db, 'shared', token));
+        if (!snap.exists()) { showError(); return; }
+        renderApp(snap.data());
+      } catch (e) { console.error(e); showError(); }
+    }
+
+    function showError() {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error').style.display = 'block';
+    }
+
+    // ========================
+    // UTILITIES
+    // ========================
+    function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    // Normalize any date string (ISO 8601 or YYYY-MM-DD) to YYYY-MM-DD
+    function toDateKey(s) {
+      if (!s) return '';
+      const d = new Date(s);
+      if (isNaN(d)) return s.substring(0, 10); // fallback: take first 10 chars
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function fmtTime12(t) {
+      const [h, m] = t.split(':').map(Number);
+      return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+    }
+    function fmtHours(hrs) {
+      const h = Math.floor(hrs); const m = Math.round((hrs - h) * 60);
+      return `${h}h ${m}m`;
+    }
+    function dateKey(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+    function parseDate(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+    function dayName(d) { return d.toLocaleDateString('en-US', { weekday: 'long' }); }
+    function shortDate(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+    function fmtShortDate(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+    function minutesSinceMidnight(timeStr) {
+      const [h,m] = timeStr.split(':').map(Number); return h * 60 + m;
+    }
+    function sleepDurMins(rec) {
+      const s = new Date(rec.sleepDate); const [sh,sm] = rec.sleepTime.split(':').map(Number); s.setHours(sh,sm,0);
+      const w = new Date(rec.wakeDate); const [wh,wm] = rec.wakeTime.split(':').map(Number); w.setHours(wh,wm,0);
+      return (w - s) / 60000;
+    }
+    function sleepDurHours(rec) { return sleepDurMins(rec) / 60; }
+
+    // ========================
+    // PARSE DATA
+    // ========================
+    function parseAllSleepRecords(sleepRecords) {
+      const all = [];
+      const byDate = {};
+      for (const [k, recs] of Object.entries(sleepRecords)) {
+        for (const r of recs) {
+          all.push(r);
+          // Normalize ISO date (e.g. "2026-03-27T00:00:00.000") to "2026-03-27"
+          const dk = toDateKey(r.sleepDate);
+          if (!byDate[dk]) byDate[dk] = [];
+          byDate[dk].push(r);
+        }
+      }
+      return { all, byDate };
+    }
+
+    function dailyStats(byDate, days) {
+      const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const stats = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(today); d.setDate(d.getDate() - i);
+        const dk = dateKey(d);
+        const recs = byDate[dk] || [];
+        let total = 0;
+        for (const r of recs) total += sleepDurHours(r);
+        stats.push({ date: d, totalHours: total, recs, sessions: recs.length });
+      }
+      return stats;
+    }
+
+    function avgDuration(stats) {
+      const ws = stats.filter(s => s.totalHours > 0);
+      if (!ws.length) return 0;
+      return ws.reduce((a, s) => a + s.totalHours, 0) / ws.length;
+    }
+
+    function avgBedtime(stats) {
+      const times = [];
+      for (const s of stats) {
+        if (s.recs.length) {
+          const m = minutesSinceMidnight(s.recs[0].sleepTime);
+          times.push(m < 360 ? m + 1440 : m);
+        }
+      }
+      if (!times.length) return null;
+      let avg = times.reduce((a,b) => a+b, 0) / times.length;
+      if (avg >= 1440) avg -= 1440;
+      const h = Math.floor(avg / 60), m = Math.round(avg % 60);
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    }
+
+    function avgWakeTime(stats) {
+      const times = [];
+      for (const s of stats) {
+        if (s.recs.length) times.push(minutesSinceMidnight(s.recs[s.recs.length - 1].wakeTime));
+      }
+      if (!times.length) return null;
+      const avg = times.reduce((a,b) => a+b, 0) / times.length;
+      const h = Math.floor(avg / 60), m = Math.round(avg % 60);
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    }
+
+    function consistencyScore(stats) {
+      const ws = stats.filter(s => s.totalHours > 0);
+      if (ws.length < 2) return 100;
+      const avg = avgDuration(ws);
+      const variance = ws.reduce((sum, s) => sum + (s.totalHours - avg) ** 2, 0) / ws.length;
+      const stdDev = Math.sqrt(variance);
+      return Math.max(0, Math.min(100, 100 - stdDev * 10));
+    }
+
+    function countRecent(records, dateField, days) {
+      const now = new Date();
+      const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      cutoff.setDate(cutoff.getDate() - days);
+      return records.filter(r => new Date(r[dateField]) >= cutoff).length;
+    }
+
+    function generateInsights(avg7, consistency, thisWeek, lastWeek, coffeeCount, alcoholCount) {
+      const ins = [];
+      if (avg7 < 6) ins.push({ icon: '⚠️', color: '#ef5350', title: 'Sleep deficit detected', desc: `You averaged ${fmtHours(avg7)} — well below the recommended 7–9 hours.` });
+      else if (avg7 < 7) ins.push({ icon: 'ℹ️', color: '#fb8c00', title: 'Slightly below target', desc: `Your average of ${fmtHours(avg7)} is close but under the recommended 7–9 hours.` });
+      else if (avg7 <= 9) ins.push({ icon: '✅', color: '#66bb6a', title: 'Healthy sleep duration', desc: `Great job! Your average of ${fmtHours(avg7)} falls within the recommended 7–9 hour range.` });
+      else ins.push({ icon: 'ℹ️', color: '#fb8c00', title: 'Oversleeping pattern', desc: `Averaging ${fmtHours(avg7)} per night. Consistently sleeping over 9 hours may indicate underlying issues.` });
+
+      if (consistency >= 80) ins.push({ icon: '✅', color: '#66bb6a', title: 'Consistent sleeper', desc: 'Your sleep schedule is very regular — this is great for your body\'s internal clock.' });
+      else if (consistency >= 50) ins.push({ icon: 'ℹ️', color: '#fb8c00', title: 'Moderate consistency', desc: 'Your sleep schedule varies somewhat. Try to keep a more regular rhythm.' });
+      else ins.push({ icon: '⚠️', color: '#ef5350', title: 'Irregular sleep pattern', desc: 'Your sleep times vary a lot. A consistent schedule can greatly improve sleep quality.' });
+
+      if (lastWeek > 0) {
+        const diff = thisWeek - lastWeek;
+        if (diff > 0.5) ins.push({ icon: '📈', color: '#66bb6a', title: 'Improving trend', desc: `You're sleeping ${fmtHours(Math.abs(diff))} more than last week.` });
+        else if (diff < -0.5) ins.push({ icon: '📉', color: '#ef5350', title: 'Declining trend', desc: `You're sleeping ${fmtHours(Math.abs(diff))} less than last week.` });
+      }
+
+      if (coffeeCount > 14) ins.push({ icon: '☕', color: '#fb8c00', title: 'High caffeine intake', desc: `${coffeeCount} coffee sessions this week. Consider cutting back, especially after 2 PM.` });
+      if (alcoholCount > 0) ins.push({ icon: '🍷', color: '#fb8c00', title: 'Alcohol noted', desc: 'Alcohol can disrupt sleep quality even if it helps you fall asleep faster.' });
+
+      return ins;
+    }
+
+    // ========================
+    // TAB NAVIGATION
+    // ========================
+    function setupTabs() {
+      document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+          item.classList.add('active');
+          document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+          document.getElementById('tab-' + item.dataset.tab).classList.add('active');
+        });
+      });
+    }
+
+    // ========================
+    // RENDER APP
+    // ========================
+    function renderApp(data) {
+      const sleepRecords = data.sleepRecords || {};
+      const coffeeRecords = data.coffeeRecords || [];
+      const medicineRecords = data.medicineRecords || [];
+      const alcoholRecords = data.alcoholRecords || [];
+      const noteRecords = data.noteRecords || [];
+      const { all, byDate } = parseAllSleepRecords(sleepRecords);
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('content-wrap').style.display = 'block';
+      document.getElementById('bottom-nav').style.display = 'flex';
+
+      renderTimeline(byDate, coffeeRecords, medicineRecords, alcoholRecords, noteRecords);
+      renderDashboard(all, byDate, coffeeRecords, medicineRecords, alcoholRecords, noteRecords);
+      setupTabs();
+    }
+
+    // ========================
+    // TIMELINE VIEW
+    // ========================
+    let timelineOffset = 0;
+
+    function renderTimeline(byDate, coffee, medicine, alcohol, notes) {
+      const container = document.getElementById('tab-timeline');
+
+      function draw() {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        // Show 7 days ending today (matching the app), shifted by offset
+        const weekEnd = new Date(today);
+        weekEnd.setDate(weekEnd.getDate() + timelineOffset * 7);
+        const weekStart = new Date(weekEnd);
+        weekStart.setDate(weekStart.getDate() - 6);
+
+        let html = '';
+
+        // Header with nav
+        html += `<div class="timeline-header">
+          <button id="tl-prev">←</button>
+          <div class="range">${shortDate(weekStart)} – ${shortDate(weekEnd)}</div>
+          <button id="tl-next">→</button>
+        </div>`;
+
+        // Timeline rows
+        html += '<div class="timeline-wrapper"><div class="timeline-table">';
+
+        // Time header row
+        html += '<div class="tl-row tl-header"><div class="tl-date">Date</div><div class="tl-hours">';
+        for (let h = 0; h < 24; h++) {
+          const label = h === 0 ? '12AM' : h < 12 ? h + 'AM' : h === 12 ? '12PM' : (h-12) + 'PM';
+          html += `<div class="tl-hour-label">${label}</div>`;
+        }
+        html += '</div></div>';
+
+        // Day rows
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(weekStart);
+          d.setDate(d.getDate() + i);
+          const dk = dateKey(d);
+          const recs = byDate[dk] || [];
+
+          html += `<div class="tl-row"><div class="tl-date" data-date="${dk}">`;
+          html += `<span class="date-text">${dk}</span>`;
+          html += `<span class="day-name">${dayName(d)} ›</span>`;
+          html += '</div><div class="tl-hours">';
+
+          // Sleep bars positioned as % of full 24-hour width
+          for (const r of recs) {
+            const startMins = minutesSinceMidnight(r.sleepTime);
+            const durMins = sleepDurMins(r);
+            const leftPct = (startMins / 1440) * 100;
+            const widthPct = (durMins / 1440) * 100;
+            html += `<div class="sleep-bar" style="left:${leftPct.toFixed(2)}%;width:${widthPct.toFixed(2)}%;">
+              <div class="tooltip">${fmtTime12(r.sleepTime)} → ${fmtTime12(r.wakeTime)} · ${fmtHours(durMins/60)}</div>
+            </div>`;
+          }
+
+          // Activity markers positioned as % of full 24-hour width
+          const dayActivities = [
+            ...coffee.filter(r => toDateKey(r.startDate) === dk).map(r => ({ ...r, type: 'coffee' })),
+            ...alcohol.filter(r => toDateKey(r.startDate) === dk).map(r => ({ ...r, type: 'alcohol' })),
+            ...medicine.filter(r => toDateKey(r.startDate) === dk).map(r => ({ ...r, type: 'medicine' })),
+          ];
+          for (const a of dayActivities) {
+            const startM = minutesSinceMidnight(a.startTime);
+            const endM = minutesSinceMidnight(a.endTime);
+            const startPct = (startM / 1440) * 100;
+            const endPct = (endM / 1440) * 100;
+            const widthPct = endPct - startPct;
+            const label = a.type === 'coffee' ? 'C' : a.type === 'alcohol' ? 'A' : 'M';
+            const durMins = endM - startM;
+            const durH = Math.floor(durMins / 60);
+            const durM = Math.round(durMins % 60);
+            const durStr = durH > 0 ? `${durH}h ${durM}m` : `${durM}m`;
+            // Wrapper group for hover tooltip + glow
+            html += `<div class="activity-group" style="left:${startPct.toFixed(2)}%;width:${widthPct.toFixed(2)}%;">`;
+            html += `<div class="tooltip">${fmtTime12(a.startTime)} → ${fmtTime12(a.endTime)} · ${durStr}</div>`;
+            html += `<div class="a-line ${a.type}" style="left:0;width:100%;"></div>`;
+            html += `<div class="a-marker ${a.type}" style="left:0;transform:translateX(-50%);">${label}</div>`;
+            html += `<div class="a-marker ${a.type}" style="right:0;transform:translateX(50%);">${label}</div>`;
+            html += `</div>`;
+          }
+
+          html += '</div></div>'; // close tl-hours + tl-row
+        }
+
+        html += '</div></div>'; // close timeline-table + timeline-wrapper
+
+        // Day detail panels
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(weekStart); d.setDate(d.getDate() + i);
+          const dk = dateKey(d);
+          const recs = byDate[dk] || [];
+          const dayCoffee = coffee.filter(r => toDateKey(r.startDate) === dk);
+          const dayAlcohol = alcohol.filter(r => toDateKey(r.startDate) === dk);
+          const dayMedicine = medicine.filter(r => toDateKey(r.startDate) === dk);
+          const dayNotes = notes.filter(r => toDateKey(r.date) === dk);
+          const hasContent = recs.length || dayCoffee.length || dayAlcohol.length || dayMedicine.length || dayNotes.length;
+
+          if (hasContent) {
+            html += `<div class="day-detail" id="detail-${dk}">`;
+            html += `<h3>${fmtShortDate(d)} — ${dayName(d)}</h3>`;
+            for (const r of recs) {
+              html += `<div class="detail-record"><div class="detail-icon" style="background:#283593;">🛏️</div>
+                <div>Sleep: ${fmtTime12(r.sleepTime)} → Wake: ${fmtTime12(r.wakeTime)} · ${fmtHours(sleepDurHours(r))}</div></div>`;
+            }
+            for (const r of dayCoffee) {
+              html += `<div class="detail-record"><div class="detail-icon" style="background:#4e342e;">☕</div>
+                <div>Coffee: ${fmtTime12(r.startTime)} → ${fmtTime12(r.endTime)}</div></div>`;
+            }
+            for (const r of dayAlcohol) {
+              html += `<div class="detail-record"><div class="detail-icon" style="background:#b71c1c;">🍷</div>
+                <div>Alcohol: ${fmtTime12(r.startTime)} → ${fmtTime12(r.endTime)}</div></div>`;
+            }
+            for (const r of dayMedicine) {
+              html += `<div class="detail-record"><div class="detail-icon" style="background:#1b5e20;">💊</div>
+                <div>Medicine: ${fmtTime12(r.startTime)} → ${fmtTime12(r.endTime)}</div></div>`;
+            }
+            for (const r of dayNotes) {
+              html += `<div class="detail-record"><div class="detail-icon" style="background:#4a148c;">📝</div>
+                <div style="font-style:italic;color:#aaa;">${escapeHtml(r.text)}</div></div>`;
+            }
+            html += '</div>';
+          }
+        }
+
+        container.innerHTML = html;
+
+        // Bind nav
+        document.getElementById('tl-prev').onclick = () => { timelineOffset--; draw(); };
+        document.getElementById('tl-next').onclick = () => { timelineOffset++; draw(); };
+
+        // Bind date clicks to toggle detail panels
+        container.querySelectorAll('.tl-date[data-date]').forEach(el => {
+          el.addEventListener('click', () => {
+            const detail = document.getElementById('detail-' + el.dataset.date);
+            if (detail) detail.classList.toggle('open');
+          });
+        });
+      }
+      draw();
+    }
+
+    // ========================
+    // DASHBOARD VIEW
+    // ========================
+    function renderDashboard(allSleep, byDate, coffee, medicine, alcohol, notes) {
+      const stats7 = dailyStats(byDate, 7);
+      const stats30 = dailyStats(byDate, 30);
+      const avg7 = avgDuration(stats7);
+      const bed7 = avgBedtime(stats7);
+      const wake7 = avgWakeTime(stats7);
+      const totalNights = Object.values(byDate).filter(v => v.length > 0).length;
+      const con = consistencyScore(stats7);
+
+      // Week comparison
+      const stats14 = dailyStats(byDate, 14);
+      const thisWeekStats = stats14.slice(7);
+      const lastWeekStats = stats14.slice(0, 7);
+      const thisWeekAvg = avgDuration(thisWeekStats);
+      const lastWeekAvg = avgDuration(lastWeekStats);
+
+      // Best / worst
+      const withSleep30 = stats30.filter(s => s.totalHours > 0);
+      const best = withSleep30.length ? withSleep30.reduce((a, b) => a.totalHours >= b.totalHours ? a : b) : null;
+      const worst = withSleep30.length ? withSleep30.reduce((a, b) => a.totalHours <= b.totalHours ? a : b) : null;
+
+      // Activity counts
+      const coffeeCount = countRecent(coffee, 'startDate', 7);
+      const alcoholCount = countRecent(alcohol, 'startDate', 7);
+      const medicineCount = countRecent(medicine, 'startDate', 7);
+
+      // Insights
+      const insights = generateInsights(avg7, con, thisWeekAvg, lastWeekAvg, coffeeCount, alcoholCount);
+
+      let html = '<div class="dashboard">';
+
+      // Summary row
+      html += '<div class="summary-row">';
+      html += `<div class="summary-card"><div class="icon">🌙</div><div class="value">${fmtHours(avg7)}</div><div class="label">Avg Sleep</div></div>`;
+      html += `<div class="summary-card"><div class="icon">🌑</div><div class="value">${bed7 || '--'}</div><div class="label">Bedtime</div></div>`;
+      html += `<div class="summary-card"><div class="icon">☀️</div><div class="value">${wake7 || '--'}</div><div class="label">Wake Up</div></div>`;
+      html += `<div class="summary-card"><div class="icon">📅</div><div class="value">${totalNights}</div><div class="label">Tracked</div></div>`;
+      html += '</div>';
+
+      // 7-day bar chart
+      html += '<div class="chart-card"><h3>Sleep Duration — Last 7 Days</h3><canvas id="chart7"></canvas></div>';
+
+      // Consistency & vs Last Week
+      const conColor = con >= 80 ? '#66bb6a' : con >= 50 ? '#fb8c00' : '#ef5350';
+      const conLabel = con >= 80 ? 'Great regularity!' : con >= 50 ? 'Room to improve' : 'Try a steady schedule';
+      const trendIcon = thisWeekAvg >= lastWeekAvg ? '📈' : '📉';
+      const trendColor = thisWeekAvg >= lastWeekAvg ? '#66bb6a' : '#ef5350';
+      html += '<div class="stat-pair">';
+      html += `<div class="stat-card"><div class="stat-label"><span class="icon">✅</span> Consistency</div>
+        <div class="stat-value" style="color:${conColor}">${Math.round(con)}%</div><div class="stat-sub">${conLabel}</div></div>`;
+      html += `<div class="stat-card"><div class="stat-label"><span class="icon">${trendIcon}</span> vs Last Week</div>
+        <div class="stat-value" style="color:${trendColor}">${fmtHours(thisWeekAvg)}</div>
+        <div class="stat-sub">${lastWeekAvg > 0 ? 'Last: ' + fmtHours(lastWeekAvg) : 'No data last week'}</div></div>`;
+      html += '</div>';
+
+      // Best / Worst
+      if (best && worst && best.date.getTime() !== worst.date.getTime()) {
+        html += '<div class="stat-pair">';
+        html += `<div class="stat-card"><div class="stat-label"><span class="icon">⭐</span> Best Night (30d)</div>
+          <div class="stat-value">${fmtHours(best.totalHours)}</div><div class="stat-sub">${shortDate(best.date)}</div></div>`;
+        html += `<div class="stat-card"><div class="stat-label"><span class="icon">⚠️</span> Worst Night (30d)</div>
+          <div class="stat-value">${fmtHours(worst.totalHours)}</div><div class="stat-sub">${shortDate(worst.date)}</div></div>`;
+        html += '</div>';
+      }
+
+      // Activity summary
+      html += '<div class="chart-card"><h3>Activity Summary — Last 7 Days</h3><div class="activity-row">';
+      html += `<div class="activity-badge"><div class="badge-icon" style="background:#3e2723;color:#bcaaa4;">☕</div>
+        <div class="badge-count">${coffeeCount}</div><div class="badge-label">Coffee</div></div>`;
+      html += `<div class="activity-badge"><div class="badge-icon" style="background:#b71c1c;color:#ef9a9a;">🍷</div>
+        <div class="badge-count">${alcoholCount}</div><div class="badge-label">Alcohol</div></div>`;
+      html += `<div class="activity-badge"><div class="badge-icon" style="background:#1b5e20;color:#a5d6a7;">💊</div>
+        <div class="badge-count">${medicineCount}</div><div class="badge-label">Medicine</div></div>`;
+      html += '</div></div>';
+
+      // 30-day trend
+      html += '<div class="chart-card"><h3>Sleep Trend — Last 30 Days</h3><canvas id="chart30"></canvas></div>';
+
+      // Smart insights
+      html += '<div class="insights-card"><div class="insights-header">💡 Smart Insights</div>';
+      for (const ins of insights) {
+        html += `<div class="insight-row"><div class="insight-icon" style="color:${ins.color}">${ins.icon}</div>
+          <div><div class="insight-title">${ins.title}</div><div class="insight-desc">${ins.desc}</div></div></div>`;
+      }
+      html += `<div class="disclaimer">ℹ️ <span>These insights are generated from your data using simple rules and are not medical advice. For sleep concerns, please consult a healthcare professional or sleep specialist.</span></div>`;
+      html += '</div>';
+
+      html += '</div>'; // end dashboard
+      document.getElementById('tab-dashboard').innerHTML = html;
+
+      // Draw charts after DOM is ready
+      requestAnimationFrame(() => {
+        draw7DayChart(stats7);
+        draw30DayChart(stats30);
+      });
+    }
+
+    function draw7DayChart(stats) {
+      const ctx = document.getElementById('chart7');
+      if (!ctx) return;
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: stats.map(s => s.date.toLocaleDateString('en-US', { weekday: 'short' })),
+          datasets: [{
+            data: stats.map(s => s.totalHours),
+            backgroundColor: '#5c6bc0',
+            borderRadius: 4,
+            barPercentage: 0.6,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true, max: 12,
+              ticks: { color: '#666', callback: v => v + 'h', stepSize: 2 },
+              grid: { color: '#1a1f26' }
+            },
+            x: { ticks: { color: '#666' }, grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function draw30DayChart(stats) {
+      const ctx = document.getElementById('chart30');
+      if (!ctx) return;
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: stats.map(s => `${s.date.getMonth()+1}/${s.date.getDate()}`),
+          datasets: [{
+            data: stats.map(s => s.totalHours),
+            borderColor: '#5c6bc0',
+            backgroundColor: 'rgba(92,107,192,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true, max: 12,
+              ticks: { color: '#666', callback: v => v + 'h', stepSize: 2 },
+              grid: { color: '#1a1f26' }
+            },
+            x: {
+              ticks: {
+                color: '#666', maxTicksLimit: 6,
+                maxRotation: 0,
+              },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>

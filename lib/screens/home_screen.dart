@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../models/models.dart';
@@ -142,6 +144,88 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       alcoholRecords: _alcoholRecords,
       noteRecords: _noteRecords,
     );
+  }
+
+  Future<void> _shareWithDoctor() async {
+    final shareService = ShareService();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final token = await shareService.shareData(
+        sleepData: _sleepData,
+        coffeeRecords: _coffeeRecords,
+        medicineRecords: _medicineRecords,
+        alcoholRecords: _alcoholRecords,
+        noteRecords: _noteRecords,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(); // dismiss loading
+
+      final url = ShareService.shareUrl(token);
+
+      final action = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Share Link Ready'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your doctor can open this link on any browser to view your sleep diary.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  url,
+                  style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'copy'),
+              child: const Text('Copy Link'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(ctx, 'share'),
+              icon: const Icon(Icons.share, size: 18),
+              label: const Text('Share'),
+            ),
+          ],
+        ),
+      );
+
+      if (action == 'copy') {
+        await Clipboard.setData(ClipboardData(text: url));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Link copied to clipboard')),
+          );
+        }
+      } else if (action == 'share') {
+        await Share.share(url, subject: 'My PahingApp Sleep Diary');
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to generate share link')),
+        );
+      }
+    }
   }
 
   Future<void> _importData() async {
@@ -572,6 +656,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
             onSelected: (value) {
               if (value == 'export') _exportData();
               if (value == 'import') _importData();
+              if (value == 'share') _shareWithDoctor();
               if (value == 'nightMode') MyApp.of(context)?.toggleTheme();
             },
             itemBuilder: (context) => [
@@ -604,6 +689,14 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                 child: ListTile(
                   leading: Icon(Icons.download),
                   title: Text('Import Data'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'share',
+                child: ListTile(
+                  leading: Icon(Icons.medical_services_outlined),
+                  title: Text('Share with Doctor'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -1544,6 +1637,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
             width: 24 * 40 + 1,
             height: rowHeight,
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 Row(
                   children: [

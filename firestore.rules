@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared sleep data — anyone with the token can read
+    match /shared/{token} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Chat rooms and messages
+    match /rooms/{roomId} {
+      allow read, write: if true;
+    }
+    match /rooms/{roomId}/{sub=**} {
+      allow read, write: if true;
+    }
+  }
+}
