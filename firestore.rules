@@ -7,7 +7,46 @@ service cloud.firestore {
       allow write: if true;
     }
 
+    // Chat waiting queue
+    match /waiting/{userId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+
     // Chat rooms and messages
+    match /chatRooms/{roomId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+      
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create: if true;
+      }
+      
+      // Call signaling
+      match /calls/{callId} {
+        allow read: if true;
+        allow create: if true;
+        allow update: if true;
+        allow delete: if true;
+        
+        match /callerCandidates/{candidateId} {
+          allow read: if true;
+          allow create: if true;
+        }
+        
+        match /calleeCandidates/{candidateId} {
+          allow read: if true;
+          allow create: if true;
+        }
+      }
+    }
+
+    // Legacy rooms path (if used)
     match /rooms/{roomId} {
       allow read, write: if true;
     }
