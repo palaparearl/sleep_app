@@ -29,6 +29,7 @@ class ShareService {
           records.map((r) => r.toJson()).toList();
     });
 
+    final expiresAt = Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 1)));
     await _db.collection('shared').doc(token).set({
       'sleepRecords': sleepJson,
       'coffeeRecords': coffeeRecords.map((r) => r.toJson()).toList(),
@@ -36,6 +37,7 @@ class ShareService {
       'alcoholRecords': alcoholRecords.map((r) => r.toJson()).toList(),
       'noteRecords': noteRecords.map((r) => r.toJson()).toList(),
       'createdAt': FieldValue.serverTimestamp(),
+      'expiresAt': expiresAt,
     });
 
     return token;
