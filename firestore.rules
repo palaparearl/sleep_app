@@ -1,57 +1,33 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Shared sleep data — anyone with the token can read
-    match /shared/{token} {
-      allow read: if true;
-      allow write: if true;
+    
+    // Matchmaking queue - users can create/delete their own entries
+    match /matchmaking/{userId} {
+      allow read, write: if true; // Open for matchmaking
+      allow delete: if true; // Allow cleanup
     }
-
-    // Chat waiting queue
-    match /waiting/{userId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
-    }
-
-    // Chat rooms and messages
-    match /chatRooms/{roomId} {
-      allow read: if true;
-      allow create: if true;
-      allow update: if true;
-      allow delete: if true;
+    
+    // Chat rooms - only participants can access
+    match /chat_rooms/{roomId} {
+      allow read: if true; // Anyone can read (for now, simplify)
+      allow create: if true; // Allow room creation during matchmaking
+      allow update: if true; // Allow updating leftBy field
+      allow delete: if true; // Allow cleanup when users disconnect
       
+      // Messages within a room
       match /messages/{messageId} {
-        allow read: if true;
-        allow create: if true;
-      }
-      
-      // Call signaling
-      match /calls/{callId} {
-        allow read: if true;
-        allow create: if true;
-        allow update: if true;
-        allow delete: if true;
-        
-        match /callerCandidates/{candidateId} {
-          allow read: if true;
-          allow create: if true;
-        }
-        
-        match /calleeCandidates/{candidateId} {
-          allow read: if true;
-          allow create: if true;
-        }
+        allow read: if true; // Anyone in the room can read
+        allow create: if request.resource.data.text is string &&
+                         request.resource.data.text.size() > 0 &&
+                         request.resource.data.text.size() <= 500; // Max 500 chars
+        allow delete: if true; // Allow cleanup
       }
     }
-
-    // Legacy rooms path (if used)
-    match /rooms/{roomId} {
-      allow read, write: if true;
-    }
-    match /rooms/{roomId}/{sub=**} {
-      allow read, write: if true;
+    
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

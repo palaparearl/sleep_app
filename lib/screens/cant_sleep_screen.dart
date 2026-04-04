@@ -12,6 +12,7 @@ import '../services/radio_browser_service.dart';
 import '../services/sleep_audio_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/ai_settings_dialog.dart';
+import '../widgets/anonymous_chat_widget.dart';
 
 class CantSleepScreen extends StatefulWidget {
   final StorageService storage;
@@ -29,7 +30,7 @@ class _CantSleepScreenState extends State<CantSleepScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -55,6 +56,7 @@ class _CantSleepScreenState extends State<CantSleepScreen>
               Tab(icon: Icon(Icons.headphones), text: 'Listen'),
               Tab(icon: Icon(Icons.menu_book), text: 'Read'),
               Tab(icon: Icon(Icons.air), text: 'Breathe'),
+              Tab(icon: Icon(Icons.chat_bubble_outline), text: 'Chat'),
             ],
           ),
         ),
@@ -65,6 +67,7 @@ class _CantSleepScreenState extends State<CantSleepScreen>
               _ListenTab(),
               _ReadTab(storage: widget.storage),
               const _BreatheTab(),
+              const AnonymousChatWidget(),
             ],
           ),
         ),
