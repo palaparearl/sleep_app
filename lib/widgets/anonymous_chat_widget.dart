@@ -56,7 +56,8 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
       _roomSubscription = _chatService.getRoomStatus(roomId).listen((status) {
         if (!mounted) return;
         
-        if (status == RoomStatus.partnerLeft) {
+        // Only handle partner left if we're still in chatting state
+        if (status == RoomStatus.partnerLeft && _state == ChatState.chatting) {
           _handlePartnerDisconnect();
         }
       });
@@ -97,7 +98,8 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
     // Mark that we're leaving
     await _chatService.markAsLeft();
     
-    // Cancel subscriptions but keep listening to messages
+    // Cancel room subscription but keep message subscription to preserve history
+    await _roomSubscription?.cancel();
     _timeoutTimer?.cancel();
     
     if (!mounted) return;
@@ -108,6 +110,8 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
   }
 
   void _handlePartnerDisconnect() {
+    // Cancel room subscription but keep message subscription to preserve history
+    _roomSubscription?.cancel();
     _timeoutTimer?.cancel();
     
     if (!mounted) return;
@@ -382,8 +386,18 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: () async {
+                        // Mark ourselves as left if we haven't already
+                        if (_state == ChatState.partnerLeft) {
+                          await _chatService.markAsLeft();
+                        }
                         // Clean up current chat only if both have left
                         await _chatService.cleanupIfBothLeft();
+                        
+                        // Cancel all subscriptions before starting new match
+                        await _messageSubscription?.cancel();
+                        await _roomSubscription?.cancel();
+                        _timeoutTimer?.cancel();
+                        
                         setState(() {
                           _roomId = null;
                           _messages = [];
@@ -401,7 +415,17 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
                   const SizedBox(width: 8),
                   OutlinedButton(
                     onPressed: () async {
+                      // Mark ourselves as left if we haven't already
+                      if (_state == ChatState.partnerLeft) {
+                        await _chatService.markAsLeft();
+                      }
                       await _chatService.cleanupIfBothLeft();
+                      
+                      // Cancel all subscriptions
+                      await _messageSubscription?.cancel();
+                      await _roomSubscription?.cancel();
+                      _timeoutTimer?.cancel();
+                      
                       setState(() {
                         _state = ChatState.idle;
                         _roomId = null;

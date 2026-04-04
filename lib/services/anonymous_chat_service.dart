@@ -44,7 +44,8 @@ class AnonymousChatService {
         'participants': [uid, partnerId],
         'createdAt': FieldValue.serverTimestamp(),
         'expiresAt': DateTime.now().add(const Duration(minutes: 30)).millisecondsSinceEpoch,
-        'leftBy': [], // Track who has left
+        'leftBy': [], // Track who has left the chat
+        'closedBy': [], // Track who has closed/moved on from viewing
       });
 
       // Delete both matchmaking docs (not update)
@@ -161,11 +162,17 @@ class AnonymousChatService {
         if (roomDoc.exists) {
           final data = roomDoc.data();
           final leftBy = (data?['leftBy'] as List?)?.cast<String>() ?? [];
+          final closedBy = (data?['closedBy'] as List?)?.cast<String>() ?? [];
           final participants = (data?['participants'] as List?)?.cast<String>() ?? [];
           
-          // Check if both users have left
-          if (leftBy.length >= participants.length) {
-            // Both have left, safe to delete
+          // Mark that we've closed/moved on from this chat
+          await roomDoc.reference.update({
+            'closedBy': FieldValue.arrayUnion([userId]),
+          });
+          
+          // Only delete if both users have closed the chat
+          if (closedBy.length + 1 >= participants.length) {
+            // Both have closed, safe to delete
             final messagesSnapshot = await roomDoc.reference.collection('messages').get();
             
             for (final doc in messagesSnapshot.docs) {
