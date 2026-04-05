@@ -222,7 +222,10 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
       if (mounted) {
         Navigator.of(context).pop(); // dismiss loading
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to generate share link')),
+          SnackBar(
+            content: Text('Failed to generate share link: ${e.toString()}'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -1610,13 +1613,25 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      date.toString().split(' ')[0],
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.deepPurple[200] : Colors.deepPurple,
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            date.toString().split(' ')[0],
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.deepPurple[200] : Colors.deepPurple,
+                            ),
+                          ),
+                        ),
+                        if (_notesForDate(date).isNotEmpty)
+                          Icon(
+                            Icons.note,
+                            size: 14,
+                            color: Colors.amber,
+                          ),
+                      ],
                     ),
                     Row(
                       children: [

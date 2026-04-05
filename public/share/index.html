@@ -100,8 +100,14 @@
       color: #fff;
       transition: background 0.2s, border 0.2s;
     }
-    .tl-date .date-text { font-weight: 600; font-size: 13px; }
+    .tl-date .date-text { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 6px; }
     .tl-date .day-name { font-size: 11px; color: #666; }
+    .tl-date .note-icon { 
+      width: 14px;
+      height: 14px;
+      fill: #ffa726;
+      flex-shrink: 0;
+    }
     .tl-hours {
       flex: 1; position: relative; min-height: 52px;
       /* Draw one vertical gridline per hour */
@@ -581,7 +587,13 @@
           const rowHeight = baseHeight + (extraLanes > 0 ? (extraLanes * 18) : 0);
 
           html += `<div class="tl-row"><div class="tl-date" data-date="${dk}">`;
-          html += `<span class="date-text">${dk}</span>`;
+          html += `<span class="date-text">${dk}`;
+          // Check if there are notes for this date
+          const dayNotes = notes.filter(r => toDateKey(r.date) === dk);
+          if (dayNotes.length > 0) {
+            html += `<svg class="note-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 2C8.44772 2 8 2.44772 8 3V4H6C4.89543 4 4 4.89543 4 6V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V6C20 4.89543 19.1046 4 18 4H16V3C16 2.44772 15.5523 2 15 2C14.4477 2 14 2.44772 14 3V4H10V3C10 2.44772 9.55228 2 9 2ZM6 9V20H18V9H6ZM8 12H16V14H8V12ZM8 16H13V18H8V16Z" fill="currentColor"/></svg>`;
+          }
+          html += `</span>`;
           html += `<span class="day-name">${dayName(d)} ›</span>`;
           html += `</div><div class="tl-hours" style="min-height:${rowHeight}px;">`;
 

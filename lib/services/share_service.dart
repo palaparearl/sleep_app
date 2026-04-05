@@ -21,26 +21,30 @@ class ShareService {
     required List<AlcoholRecord> alcoholRecords,
     required List<NoteRecord> noteRecords,
   }) async {
-    final token = _generateToken();
+    try {
+      final token = _generateToken();
 
-    final sleepJson = <String, dynamic>{};
-    sleepData.forEach((date, records) {
-      sleepJson[date.toIso8601String()] =
-          records.map((r) => r.toJson()).toList();
-    });
+      final sleepJson = <String, dynamic>{};
+      sleepData.forEach((date, records) {
+        sleepJson[date.toIso8601String()] =
+            records.map((r) => r.toJson()).toList();
+      });
 
-    final expiresAt = Timestamp.fromDate(DateTime.now().add(const Duration(minutes: 1)));
-    await _db.collection('shared').doc(token).set({
-      'sleepRecords': sleepJson,
-      'coffeeRecords': coffeeRecords.map((r) => r.toJson()).toList(),
-      'medicineRecords': medicineRecords.map((r) => r.toJson()).toList(),
-      'alcoholRecords': alcoholRecords.map((r) => r.toJson()).toList(),
-      'noteRecords': noteRecords.map((r) => r.toJson()).toList(),
-      'createdAt': FieldValue.serverTimestamp(),
-      'expiresAt': expiresAt,
-    });
+      final expiresAt = Timestamp.fromDate(DateTime.now().add(const Duration(days: 7)));
+      await _db.collection('shared').doc(token).set({
+        'sleepRecords': sleepJson,
+        'coffeeRecords': coffeeRecords.map((r) => r.toJson()).toList(),
+        'medicineRecords': medicineRecords.map((r) => r.toJson()).toList(),
+        'alcoholRecords': alcoholRecords.map((r) => r.toJson()).toList(),
+        'noteRecords': noteRecords.map((r) => r.toJson()).toList(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'expiresAt': expiresAt,
+      });
 
-    return token;
+      return token;
+    } catch (e) {
+      throw Exception('Failed to upload data to Firestore: $e');
+    }
   }
 
   /// Build the shareable URL from a token.

@@ -30,6 +30,12 @@ service cloud.firestore {
       }
     }
     
+    // Shared sleep diary data - allow anyone to create and read
+    match /shared/{token} {
+      allow create: if true; // Allow users to share their data
+      allow read: if true;   // Allow doctors to view shared data
+    }
+    
     // Default deny all other collections
     match /{document=**} {
       allow read, write: if false;
