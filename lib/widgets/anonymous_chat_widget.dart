@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models/chat_message.dart';
 import '../services/anonymous_chat_service.dart';
+import '../services/webrtc_service.dart';
 
 class AnonymousChatWidget extends StatefulWidget {
   const AnonymousChatWidget({super.key});
@@ -10,7 +13,8 @@ class AnonymousChatWidget extends StatefulWidget {
   State<AnonymousChatWidget> createState() => _AnonymousChatWidgetState();
 }
 
-class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
+class _AnonymousChatWidgetState extends State<AnonymousChatWidget>
+    with AutomaticKeepAliveClientMixin {
   final _chatService = AnonymousChatService();
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
@@ -19,8 +23,35 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
   String? _roomId;
   StreamSubscription? _messageSubscription;
   StreamSubscription? _roomSubscription;
+  StreamSubscription? _typingSubscription;
+  StreamSubscription? _callSubscription;
   List<ChatMessage> _messages = [];
   Timer? _timeoutTimer;
+  Timer? _typingTimer;
+  bool _isPartnerTyping = false;
+  WebRTCService? _webrtcService;
+  bool _inCall = false;
+  bool _isVideoCall = false;
+  MediaStream? _remoteStream;
+  bool _showingCallDialog = false;
+  String? _pendingCallId;
+
+  final _remoteRenderer = RTCVideoRenderer();
+  final _localRenderer = RTCVideoRenderer();
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initRenderers();
+  }
+
+  Future<void> _initRenderers() async {
+    await _remoteRenderer.initialize();
+    await _localRenderer.initialize();
+  }
 
   @override
   void dispose() {
@@ -28,7 +59,13 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
     _scrollController.dispose();
     _messageSubscription?.cancel();
     _roomSubscription?.cancel();
+    _typingSubscription?.cancel();
+    _callSubscription?.cancel();
     _timeoutTimer?.cancel();
+    _typingTimer?.cancel();
+    _webrtcService?.dispose();
+    _remoteRenderer.dispose();
+    _localRenderer.dispose();
     _chatService.dispose();
     super.dispose();
   }
@@ -62,9 +99,38 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
         }
       });
 
-      // Auto-disconnect after 30 minutes
-      _timeoutTimer = Timer(const Duration(minutes: 30), () {
-        if (mounted) _disconnect();
+      // Listen for typing indicator
+      _typingSubscription = _chatService.isPartnerTyping(roomId).listen((isTyping) {
+        if (mounted) {
+          setState(() => _isPartnerTyping = isTyping);
+        }
+      });
+
+      // Listen for incoming calls
+      _callSubscription = FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .doc(roomId)
+          .snapshots()
+          .listen((snapshot) {
+        if (!mounted) return;
+        final data = snapshot.data();
+        final callData = data?['call'];
+        
+        // Handle incoming call
+        if (callData != null && 
+            callData['status'] == 'ringing' && 
+            callData['caller'] != _chatService.userId && 
+            !_inCall && 
+            !_showingCallDialog &&
+            _pendingCallId != callData['caller']) {
+          _pendingCallId = callData['caller'];
+          _handleIncomingCall(callData);
+        }
+        
+        // Handle call ended by partner
+        if (callData == null && _inCall) {
+          _endCall();
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -90,10 +156,332 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
 
     _messageController.clear();
     await _chatService.sendMessage(_roomId!, text);
+    _stopTypingIndicator();
+  }
+
+  void _onTextChanged(String text) {
+    if (_roomId == null) return;
+    
+    // Cancel existing timer
+    _typingTimer?.cancel();
+    
+    if (text.trim().isNotEmpty) {
+      // User is typing, set indicator
+      _chatService.setTyping(_roomId!, true);
+      
+      // Auto-clear after 3 seconds of no typing
+      _typingTimer = Timer(const Duration(seconds: 3), () {
+        _stopTypingIndicator();
+      });
+    } else {
+      // Text is empty, clear indicator
+      _stopTypingIndicator();
+    }
+  }
+
+  void _stopTypingIndicator() {
+    _typingTimer?.cancel();
+    if (_roomId != null) {
+      _chatService.setTyping(_roomId!, false);
+    }
+  }
+
+  Future<void> _startCall({required bool video}) async {
+    if (_roomId == null) return;
+
+    try {
+      // Get permissions FIRST before setting any state
+      _webrtcService = WebRTCService();
+      await _webrtcService!.initialize(video: video);
+
+      if (!mounted) {
+        await _webrtcService?.dispose();
+        return;
+      }
+
+      setState(() {
+        _inCall = true;
+        _isVideoCall = video;
+      });
+
+      _localRenderer.srcObject = _webrtcService!.localStream;
+
+      _webrtcService!.remoteStream.listen((stream) {
+        if (mounted && stream != null) {
+          _remoteRenderer.srcObject = stream;
+          setState(() => _remoteStream = stream);
+        }
+      });
+
+      // Create initial call document without offer
+      await FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .doc(_roomId)
+          .update({
+        'call': {
+          'status': 'ringing',
+          'caller': _chatService.userId,
+          'video': video,
+          'calleeReady': false,
+        },
+      });
+
+      // Wait for callee to be ready (permissions granted) with longer timeout
+      final calleeReadyCompleter = Completer<bool>();
+      StreamSubscription? readySubscription;
+      
+      readySubscription = FirebaseFirestore.instance
+          .collection('chat_rooms')
+          .doc(_roomId)
+          .snapshots()
+          .listen((snapshot) {
+        final data = snapshot.data();
+        final callData = data?['call'];
+        
+        if (callData == null) {
+          // Call was declined or cancelled
+          if (!calleeReadyCompleter.isCompleted) {
+            calleeReadyCompleter.complete(false);
+          }
+        } else if (callData['calleeReady'] == true) {
+          if (!calleeReadyCompleter.isCompleted) {
+            calleeReadyCompleter.complete(true);
+          }
+        }
+      });
+
+      // Increased timeout to 2 minutes for permission granting
+      final isReady = await calleeReadyCompleter.future.timeout(
+        const Duration(seconds: 120),
+        onTimeout: () => false,
+      );
+
+      await readySubscription?.cancel();
+
+      if (!isReady || !mounted) {
+        await _endCall();
+        return;
+      }
+
+      // Now create and send the offer
+      await _webrtcService!.createOffer(_roomId!, _chatService.userId, video);
+    } catch (e) {
+      print('Error starting call: $e');
+      await _endCall();
+    }
+  }
+
+  Future<void> _handleIncomingCall(Map<String, dynamic> callData) async {
+    _showingCallDialog = true;
+    final isVideo = callData['video'] ?? false;
+    
+    // Show permission request dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(isVideo ? Icons.videocam : Icons.call, color: Colors.green),
+            const SizedBox(width: 8),
+            Text('Incoming ${isVideo ? 'Video' : 'Voice'} Call'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Requesting permissions...'),
+          ],
+        ),
+      ),
+    );
+
+    MediaStream? permissionStream;
+    bool permissionGranted = false;
+    
+    try {
+      // Request permissions
+      permissionStream = await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': isVideo ? {'facingMode': 'user'} : false,
+      });
+      permissionGranted = true;
+      
+      // Release the stream
+      permissionStream.getTracks().forEach((track) => track.stop());
+    } catch (e) {
+      print('Permission denied: $e');
+      permissionGranted = false;
+    }
+
+    // Close permission dialog
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+
+    if (!permissionGranted) {
+      _showingCallDialog = false;
+      _pendingCallId = null;
+      // Auto-decline
+      if (_roomId != null) {
+        await FirebaseFirestore.instance
+            .collection('chat_rooms')
+            .doc(_roomId)
+            .update({'call': FieldValue.delete()});
+      }
+      return;
+    }
+
+    // Now show accept/decline dialog
+    if (!mounted) return;
+    _showIncomingCallDialog(callData);
+  }
+
+  Future<void> _showIncomingCallDialog(Map<String, dynamic> callData) async {
+    if (_inCall) {
+      _showingCallDialog = false;
+      _pendingCallId = null;
+      return;
+    }
+    
+    final isVideo = callData['video'] ?? false;
+    final accept = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(isVideo ? Icons.videocam : Icons.call, color: Colors.green),
+            const SizedBox(width: 8),
+            Text('Incoming ${isVideo ? 'Video' : 'Voice'} Call'),
+          ],
+        ),
+        content: const Text('Stranger is calling you'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Decline'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.call),
+            label: const Text('Accept'),
+            style: FilledButton.styleFrom(backgroundColor: Colors.green),
+          ),
+        ],
+      ),
+    );
+
+    _showingCallDialog = false;
+    _pendingCallId = null;
+
+    if (accept == true) {
+      setState(() {
+        _inCall = true;
+        _isVideoCall = isVideo;
+      });
+
+      try {
+        _webrtcService = WebRTCService();
+        await _webrtcService!.initialize(video: isVideo);
+
+        _localRenderer.srcObject = _webrtcService!.localStream;
+
+        _webrtcService!.remoteStream.listen((stream) {
+          if (mounted && stream != null) {
+            _remoteRenderer.srcObject = stream;
+            setState(() => _remoteStream = stream);
+          }
+        });
+
+        // Send ready signal to caller
+        await FirebaseFirestore.instance
+            .collection('chat_rooms')
+            .doc(_roomId)
+            .update({
+          'call.calleeReady': true,
+        });
+
+        // Wait for offer from caller
+        final offerCompleter = Completer<Map<String, dynamic>?>();
+        StreamSubscription? offerSubscription;
+        
+        offerSubscription = FirebaseFirestore.instance
+            .collection('chat_rooms')
+            .doc(_roomId)
+            .snapshots()
+            .listen((snapshot) {
+          final data = snapshot.data();
+          final offer = data?['call']?['offer'];
+          
+          if (offer != null && !offerCompleter.isCompleted) {
+            offerCompleter.complete(offer);
+          } else if (data?['call'] == null && !offerCompleter.isCompleted) {
+            offerCompleter.complete(null);
+          }
+        });
+
+        final offer = await offerCompleter.future.timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => null,
+        );
+
+        await offerSubscription?.cancel();
+
+        if (offer == null || !mounted) {
+          await _endCall();
+          return;
+        }
+
+        await _webrtcService!.handleOffer(_roomId!, _chatService.userId, offer);
+      } catch (e) {
+        print('Error accepting call: $e');
+        await _endCall();
+      }
+    } else {
+      // Declined - clear the call offer
+      if (_roomId != null) {
+        await FirebaseFirestore.instance
+            .collection('chat_rooms')
+            .doc(_roomId)
+            .update({'call': FieldValue.delete()});
+      }
+    }
+  }
+
+  Future<void> _endCall() async {
+    // Immediately update UI state
+    if (mounted) {
+      setState(() {
+        _inCall = false;
+        _remoteStream = null;
+      });
+    }
+    
+    // Clean up renderers
+    _remoteRenderer.srcObject = null;
+    _localRenderer.srcObject = null;
+    
+    // Clean up WebRTC and Firestore in background
+    final roomId = _roomId;
+    final webrtc = _webrtcService;
+    _webrtcService = null;
+    
+    // Don't await these - let them run in background
+    if (roomId != null) {
+      webrtc?.endCall(roomId).catchError((e) => print('Error ending call: $e'));
+    }
+    webrtc?.dispose().catchError((e) => print('Error disposing WebRTC: $e'));
   }
 
   Future<void> _disconnect() async {
     if (_state != ChatState.chatting) return;
+
+    if (_inCall) {
+      await _endCall();
+    }
     
     // Mark that we're leaving
     await _chatService.markAsLeft();
@@ -123,6 +511,7 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Column(
@@ -219,7 +608,6 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
                   ),
                   const SizedBox(height: 12),
                   _infoItem('• Completely anonymous — no accounts needed'),
-                  _infoItem('• Chat disappears after 30 minutes'),
                   _infoItem('• Be kind and respectful'),
                   _infoItem('• You can disconnect anytime'),
                 ],
@@ -485,6 +873,10 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
   }
 
   Widget _buildChatState(bool isDark) {
+    if (_inCall) {
+      return _buildCallView(isDark);
+    }
+
     return Column(
       children: [
         // Header
@@ -516,6 +908,18 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
                     ),
                   ],
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.videocam, size: 20),
+                tooltip: 'Video Call',
+                color: Colors.green[300],
+                onPressed: () => _startCall(video: true),
+              ),
+              IconButton(
+                icon: const Icon(Icons.call, size: 20),
+                tooltip: 'Voice Call',
+                color: Colors.blue[300],
+                onPressed: () => _startCall(video: false),
               ),
               IconButton(
                 icon: const Icon(Icons.logout, size: 20),
@@ -559,15 +963,46 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final message = _messages[index];
-                    final isMe = message.senderId == _chatService.userId;
-                    return _buildMessageBubble(message, isMe, isDark);
-                  },
+              : Column(
+                  children: [
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final message = _messages[index];
+                          final isMe = message.senderId == _chatService.userId;
+                          return _buildMessageBubble(message, isMe, isDark);
+                        },
+                      ),
+                    ),
+                    // Typing indicator
+                    if (_isPartnerTyping)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12, bottom: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.grey[800] : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _TypingDot(delay: 0),
+                                const SizedBox(width: 4),
+                                _TypingDot(delay: 200),
+                                const SizedBox(width: 4),
+                                _TypingDot(delay: 400),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
         ),
         // Input
@@ -586,6 +1021,7 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
               Expanded(
                 child: TextField(
                   controller: _messageController,
+                  onChanged: _onTextChanged,
                   decoration: InputDecoration(
                     hintText: 'Type a message...',
                     border: OutlineInputBorder(
@@ -638,6 +1074,83 @@ class _AnonymousChatWidgetState extends State<AnonymousChatWidget> {
       ),
     );
   }
+
+  Widget _buildCallView(bool isDark) {
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            children: [
+              // Remote video (full screen)
+              if (_remoteStream != null)
+                RTCVideoView(_remoteRenderer, mirror: false)
+              else
+                Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              // Local video (small overlay)
+              if (_isVideoCall && _webrtcService?.localStream != null)
+                Positioned(
+                  top: 16,
+                  right: 16,
+                  child: Container(
+                    width: 120,
+                    height: 160,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.white, width: 2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: RTCVideoView(_localRenderer, mirror: true),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // Call controls
+        Container(
+          padding: const EdgeInsets.all(24),
+          color: Colors.black87,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              if (_isVideoCall)
+                _CallButton(
+                  icon: _webrtcService?.isVideoEnabled ?? false
+                      ? Icons.videocam
+                      : Icons.videocam_off,
+                  color: Colors.white,
+                  onPressed: () async {
+                    await _webrtcService?.toggleVideo();
+                    setState(() {});
+                  },
+                ),
+              _CallButton(
+                icon: _webrtcService?.isAudioEnabled ?? false
+                    ? Icons.mic
+                    : Icons.mic_off,
+                color: Colors.white,
+                onPressed: () async {
+                  await _webrtcService?.toggleAudio();
+                  setState(() {});
+                },
+              ),
+              _CallButton(
+                icon: Icons.call_end,
+                color: Colors.red,
+                onPressed: _endCall,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 enum ChatState {
@@ -647,4 +1160,86 @@ enum ChatState {
   partnerLeft,
   youLeft,
   error,
+}
+
+// Animated typing indicator dot
+class _TypingDot extends StatefulWidget {
+  final int delay;
+  
+  const _TypingDot({required this.delay});
+  
+  @override
+  State<_TypingDot> createState() => _TypingDotState();
+}
+
+class _TypingDotState extends State<_TypingDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+  
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    
+    _animation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    
+    Future.delayed(Duration(milliseconds: widget.delay), () {
+      if (mounted) {
+        _controller.repeat(reverse: true);
+      }
+    });
+  }
+  
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _animation,
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: Colors.grey[600],
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}
+
+class _CallButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+
+  const _CallButton({
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        shape: BoxShape.circle,
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: color),
+        iconSize: 32,
+        onPressed: onPressed,
+      ),
+    );
+  }
 }

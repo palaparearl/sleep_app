@@ -417,13 +417,19 @@ class _AudiobooksSectionState extends State<_AudiobooksSection> {
 // ─── Listen Tab ───
 
 class _ListenTab extends StatefulWidget {
+  const _ListenTab();
+
   @override
   State<_ListenTab> createState() => _ListenTabState();
 }
 
-class _ListenTabState extends State<_ListenTab> {
+class _ListenTabState extends State<_ListenTab>
+    with AutomaticKeepAliveClientMixin {
   final _audio = SleepAudioService();
   Timer? _uiTimer;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -442,6 +448,7 @@ class _ListenTabState extends State<_ListenTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isActive =
         _audio.player.processingState != ProcessingState.idle &&
@@ -1257,9 +1264,12 @@ class _BreatheTab extends StatefulWidget {
 }
 
 class _BreatheTabState extends State<_BreatheTab>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late AnimationController _controller;
   bool _isRunning = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   // 4-7-8 breathing: inhale 4s, hold 7s, exhale 8s = 19s cycle
   static const _inhale = 4;
@@ -1335,6 +1345,7 @@ class _BreatheTabState extends State<_BreatheTab>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Center(

@@ -4,8 +4,8 @@ service cloud.firestore {
     
     // Matchmaking queue - users can create/delete their own entries
     match /matchmaking/{userId} {
-      allow read, write: if true; // Open for matchmaking
-      allow delete: if true; // Allow cleanup
+      allow read: if true; // Open for matchmaking
+      allow write: if true; // Allow create, update (heartbeat), delete
     }
     
     // Chat rooms - only participants can access
@@ -22,6 +22,11 @@ service cloud.firestore {
                          request.resource.data.text.size() > 0 &&
                          request.resource.data.text.size() <= 500; // Max 500 chars
         allow delete: if true; // Allow cleanup
+      }
+      
+      // ICE candidates for WebRTC
+      match /ice_candidates/{candidateId} {
+        allow read, write: if true;
       }
     }
     

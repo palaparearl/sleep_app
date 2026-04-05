@@ -704,19 +704,21 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
           ),
         ],
       ),
-      body: _currentViewIndex == 0
-          ? _buildTimelineView()
-          : _currentViewIndex == 1
-          ? DashboardScreen(
-              sleepData: _sleepData,
-              coffeeRecords: _coffeeRecords,
-              medicineRecords: _medicineRecords,
-              alcoholRecords: _alcoholRecords,
-              storage: _storage,
-            )
-          : _currentViewIndex == 2
-          ? CantSleepScreen(storage: _storage)
-          : const DoctorsScreen(),
+      body: IndexedStack(
+        index: _currentViewIndex,
+        children: [
+          _buildTimelineView(),
+          DashboardScreen(
+            sleepData: _sleepData,
+            coffeeRecords: _coffeeRecords,
+            medicineRecords: _medicineRecords,
+            alcoholRecords: _alcoholRecords,
+            storage: _storage,
+          ),
+          CantSleepScreen(storage: _storage),
+          const DoctorsScreen(),
+        ],
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentViewIndex,
         onTap: (index) {
@@ -1404,6 +1406,7 @@ class _SleepDiaryHomeState extends State<SleepDiaryHome> {
         '${_fmtShort(pageDates.first)} – ${_fmtShort(pageDates.last)}';
 
     return Column(
+      key: const ValueKey('timeline'), // Add key to preserve state
       children: [
         Padding(
           padding: const EdgeInsets.all(8.0),
